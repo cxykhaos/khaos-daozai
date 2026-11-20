@@ -23,10 +23,10 @@ impl crate::app::App {
         for (position,extra) in self.quota_balance_layout(ui.ctx()){layout.balance_tail(position,extra);}
         let power_extra=crate::paint::power_extra(&self.resident_powers);
         if power_extra>0.0 { layout.widen(BATTERY,power_extra); }
-        if self.visible_clash().is_some() && !self.resident_powers.is_empty() { layout.widen(BATTERY,28.0); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(ui.ctx()){layout.widen(WEATHER,extra);}
+        if self.visible_clash().is_some() { layout.place_clash(&order, 52.0); }
         let (stage,_)=ui.allocate_exact_size(Vec2::new(ui.available_width(),100.0),egui::Sense::hover());
         ui.painter().rect_filled(stage,10.0,Color32::from_rgb(19,25,36));
         let scale=((stage.width()-28.0)/layout.width).min(1.0);
@@ -71,21 +71,19 @@ impl crate::app::App {
             let dx=if is_dragged{pointer.map(|p|((p.x-origin.x)/scale-(left+width/2.0)).clamp(-left,layout.width-left-width)).unwrap_or(0.0)}else{0.0};
             if is_dragged {ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
             else if response.hovered(){ui.painter().rect_filled(rect,6.0,Color32::from_white_alpha(18));}
-            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>!self.resident_powers.is_empty()||self.visible_clash().is_some(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0,MUSIC=>self.media.is_shown(),FOCUS=>self.pomo.running,_=>true};
+            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>!self.resident_powers.is_empty(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0||self.visible_clash().is_some(),MUSIC=>self.media.is_shown(),FOCUS=>self.pomo.running,_=>true};
             let c=card.shifted(dx,0.0).faded(if active||is_dragged{1.0}else{0.38}).ghost();
             match slot{
                 BATTERY=>{
                     let powers=self.resident_powers.clone();
-                    let clash=self.visible_clash().cloned();
-                    let single=powers.len()<=1 && clash.is_none();
-                    if single {
+                    if powers.len()<=1 {
                         let source=powers.first().map(|chip|chip.source).unwrap_or(self.resident_source);
                         let shift=if source.has_icon(){crate::paint::MOUSE_SHIFT}else{0.0};
                         let (percent,charging)=powers.first().map(|chip|(Some(chip.percent),chip.charging)).unwrap_or(self.resident_power);
                         let name=powers.first().map(|chip|chip.name.clone()).unwrap_or_default();
                         paint::battery(&c,x+shift,15.0,percent,charging,1.0,source,&name);
                     } else {
-                        let span=20.0+crate::paint::power_extra(&powers)+if clash.is_some()&&!powers.is_empty(){28.0}else{0.0};
+                        let span=20.0+crate::paint::power_extra(&powers);
                         let mut px=x-span/2.0;
                         for (index,chip) in powers.iter().enumerate() {
                             if index>0 {px+=6.0;}
@@ -93,10 +91,6 @@ impl crate::app::App {
                             let ring=px+if chip.source.has_icon(){w-10.0}else{w/2.0};
                             paint::battery(&c,ring,15.0,Some(chip.percent),chip.charging,1.0,chip.source,&chip.name);
                             px+=w;
-                        }
-                        if let Some(usage)=clash {
-                            if !powers.is_empty() {px+=6.0;}
-                            paint::used_ring(&c,px+11.0,15.0,usage.used_percent(),1.0,&usage.summary());
                         }
                     }
                 },
@@ -108,7 +102,10 @@ impl crate::app::App {
                 PET=>self.pet.draw(&c,x,self.t,self.skin_palette()),
                 MUSIC=>paint::playback_bars(&c,x,15.0,self.t,self.media.playing,theme::WHITE),
                 FOCUS=>crate::focus_bar::draw(&c,x,15.0,self.t,&self.pomo,self.phase_secs(self.pomo.phase),false),
-                QUOTA if count>0=>self.draw_quota_bar(&c,cx,&layout),
+                QUOTA if count>0||self.visible_clash().is_some()=>{
+                    if count>0 {self.draw_quota_bar(&c,cx,&layout);}
+                    self.paint_resident_clash(&c,cx,&layout);
+                },
                 _=>{c.ring(x,15.0,10.0,2.0,theme::GRAY);c.text(x,18.0,"AI",7.0,W::Bold,theme::WHITE,H::Center);},
             }
             if is_dragged {ui.painter().line_segment([Pos2::new(rect.center().x,body.bottom()+6.0),Pos2::new(rect.center().x,body.bottom()+12.0)],egui::Stroke::new(2.0,theme::BLUE));}

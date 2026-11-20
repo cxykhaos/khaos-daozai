@@ -161,25 +161,16 @@ fn query(cache:&mut Cache) -> Result<Vec<Device>, ()> {
         Ok(levels)
     });
     if let Some(more) = extra.into_inner() {
-        cache.reported = more;
+        // 只给当前仍连接的设备补电量。断开后节点还在，不能再把旧设备加回来。
+        cache.reported = more.into_iter().filter(|device| found.iter().any(|item| item.id == device.id)).collect();
         cache.reported_at = Some(now);
-    } else if found.is_empty() && cache.reported_at.is_none_or(|at| now.duration_since(at) >= Duration::from_secs(30)) {
-        if let Ok((_, more)) = scan_batteries(&[]) {
-            cache.reported = more;
-            cache.reported_at = Some(now);
-        }
     }
     for device in &cache.reported {
         if let Some(existing) = found.iter_mut().find(|item| item.id == device.id) {
             if existing.battery.is_none() { existing.battery = device.battery; }
-        } else {
-            found.push(device.clone());
         }
     }
-    if !cache.reported.is_empty() {
-        found.sort_by(|a, b| a.id.cmp(&b.id));
-        cache.devices = found.clone();
-    }
+    cache.devices = found.clone();
     Ok(found)
 }
 

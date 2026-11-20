@@ -512,20 +512,38 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     }
 }
 
-/// 流量环：中间是已用百分比，和 Clash 首页的进度一致。
-pub fn used_ring(c: &Card, cx: f32, cy: f32, percent: u8, k: f32, tip: &str) {
-    let r = 8.2 * k;
-    let w = 2.6 * k;
-    let level = percent as f32 / 100.0;
-    let col = if level >= 0.9 { theme::RED } else { theme::BLUE };
-    c.ring(cx, cy, r, w, alpha(col, 0.22));
-    let a0 = -FRAC_PI_2;
-    if level >= 0.999 { c.ring(cx, cy, r, w, col); }
-    else { c.arc(cx, cy, r, a0, a0 + TAU * level.max(0.02), w, col); }
-    c.text(cx, cy + 2.4 * k, &format!("{percent}"), 6.2 * k, W::Bold, col, H::Center);
+/// 常驻栏上的 Clash 剩余流量：猫标在左，剩余额度在右。
+pub fn clash_chip(c: &Card, cx: f32, cy: f32, label: &str, tip: &str) {
+    let text_w = c.text_w(label, 11.0, W::Bold);
+    let icon = 14.0;
+    let total = icon + 4.0 + text_w;
+    let left = cx - total / 2.0;
+    clash_icon(c, left, cy - icon / 2.0, icon);
+    c.text(left + icon + 4.0, cy + 4.0, label, 11.0, W::Bold, theme::WHITE, H::Left);
     if c.live {
-        let rect = c.rect(cx - r, cy - r, r * 2.0, r * 2.0);
+        let rect = c.rect(left - 2.0, cy - 10.0, total + 4.0, 20.0);
         c.ui.interact(rect, Id::new(("clash-usage", cx.to_bits(), cy.to_bits())), Sense::hover()).on_hover_text(tip);
+    }
+}
+
+/// 侧边竖排：猫标在上，剩余额度在下。
+pub fn clash_stack(c: &Card, cx: f32, cy: f32, label: &str, tip: &str) {
+    clash_icon(c, cx - 7.0, cy - 12.0, 14.0);
+    c.text(cx, cy + 10.0, label, 9.0, W::Bold, theme::WHITE, H::Center);
+    if c.live {
+        let rect = c.rect(cx - 16.0, cy - 14.0, 32.0, 28.0);
+        c.ui.interact(rect, Id::new(("clash-usage-side", cx.to_bits(), cy.to_bits())), Sense::hover()).on_hover_text(tip);
+    }
+}
+
+fn clash_icon(c: &Card, x: f32, y: f32, size: f32) {
+    let rect = c.rect(x, y, size, size);
+    let icon = egui::include_image!("../assets/clash-cat.svg");
+    let egui::ImageSource::Bytes { uri, bytes } = icon else { return };
+    let pixels = (rect.width() * c.ui.ctx().pixels_per_point()).ceil().max(1.0) as u32;
+    let icon = egui::Image::from_bytes(format!("{uri}/{pixels}.svg"), bytes);
+    if let Ok(egui::load::TexturePoll::Ready { texture }) = icon.fit_to_exact_size(rect.size()).load_for_size(c.ui.ctx(), rect.size()) {
+        c.painter.image(texture.id, rect, Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
     }
 }
 

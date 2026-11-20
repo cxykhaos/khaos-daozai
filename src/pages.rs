@@ -1,5 +1,5 @@
 //! 五个页面：音乐 → 专注 → 饮水 → 置物 → 待办。
-//! 坐标全部是面板局部逻辑点（419×140），文字 y 是基线。
+//! 坐标全部是面板局部逻辑点（419×140，音乐页 214），文字 y 是基线。
 
 use crate::anim::{self, lerp, smoothstep, Spring};
 use crate::app::{App, Cmd, Env, Phase};
@@ -12,7 +12,11 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 
 /// 剪贴板分栏一屏显示的条数。
 pub(crate) const CLIP_ROWS: usize = 4;
-pub(crate) const MUSIC_VOLUME_RECT: Rect = Rect::from_min_max(Pos2::new(345.0,6.0),Pos2::new(389.0,104.0));
+pub(crate) const MUSIC_VOLUME_RECT: Rect = Rect::from_min_max(Pos2::new(345.0,crate::app::MUSIC_CTRL_Y-112.0),Pos2::new(389.0,crate::app::MUSIC_CTRL_Y-14.0));
+/// 进度条：x、宽、中心 y。歌词打开时进度条在歌词下面。
+pub(crate) fn music_seek_geom(with_lyrics: bool) -> (f32, f32, f32) {
+    if with_lyrics { (40.0, 339.0, 156.0) } else { (40.0, 339.0, 128.0) }
+}
 
 fn mmss(secs: f64) -> String {
     let s = secs.max(0.0) as u64;
@@ -43,37 +47,37 @@ impl App {
         let with_lyrics=has && self.show_lyrics;
         let ctx=c.ui.ctx().clone();
         let playing_t=ctx.animate_bool_with_time(egui::Id::new("np-playing"),np.playing,0.22);
-        let art_size=if with_lyrics {44.0}else{62.0};
-        let art_y=if with_lyrics {23.0}else{13.0};
+        let art_size=if with_lyrics {46.0}else{68.0};
+        let art_y=if with_lyrics {34.0}else{42.0};
         if let Some((image,texture))=&self.music_artwork {
             let [w,h]=image.size;
             let (uw,vh)=if w>h {(h as f32/w as f32,1.0)}else{(1.0,w as f32/h as f32)};
             let uv=Rect::from_center_size(Pos2::new(0.5,0.5),egui::vec2(uw,vh));
-            c.painter.add(egui::epaint::RectShape::filled(c.rect(44.0,art_y,art_size,art_size),10.0*c.s,Color32::WHITE).with_texture(texture.id(),uv));
+            c.painter.add(egui::epaint::RectShape::filled(c.rect(36.0,art_y,art_size,art_size),10.0*c.s,Color32::WHITE).with_texture(texture.id(),uv));
         } else if has {
             let (a,b)=cover_colors(&np.title);
-            let cc=c.clipped(44.0,art_y,art_size,art_size);
-            cc.vgrad(44.0,art_y,art_size,art_size,10.0,a,b);
-            paint::note(&cc,44.0+art_size/2.0,art_y+art_size/2.0,art_size*0.39,Color32::from_white_alpha(235));
+            let cc=c.clipped(36.0,art_y,art_size,art_size);
+            cc.vgrad(36.0,art_y,art_size,art_size,10.0,a,b);
+            paint::note(&cc,36.0+art_size/2.0,art_y+art_size/2.0,art_size*0.39,Color32::from_white_alpha(235));
         } else {
-            c.fill(44.0,13.0,62.0,62.0,13.0,Color32::from_rgb(25,25,27));
-            paint::note(c,75.0,44.0,26.0,Color32::from_rgb(110,110,114));
+            c.fill(36.0,42.0,68.0,68.0,13.0,Color32::from_rgb(25,25,27));
+            paint::note(c,70.0,76.0,26.0,Color32::from_rgb(110,110,114));
         }
 
         if !has {
-            c.text(121.0,47.0,"暂无播放",14.0,W::Bold,theme::WHITE,H::Left);
+            c.text(116.0,78.0,"暂无播放",15.0,W::Bold,theme::WHITE,H::Left);
         } else {
-            let text_x=if with_lyrics {99.0}else{121.0};
-            let text_width=if with_lyrics {123.0}else{220.0};
-            let title_size=if with_lyrics {12.0}else{14.0};
+            let text_x=36.0+art_size+12.0;
+            let text_width=379.0-text_x;
+            let title_y=if with_lyrics {52.0}else{68.0};
             let subtitle=if np.artist.trim().is_empty(){np.source.clone()}else{np.artist.clone()};
-            c.text(text_x,if with_lyrics {41.0}else{53.0},&c.fit(&np.title,title_size,W::Bold,text_width),title_size,W::Bold,theme::WHITE,H::Left);
-            c.text(text_x,if with_lyrics {57.0}else{67.0},&c.fit(&subtitle,size::BODY,W::Regular,text_width),size::BODY,W::Regular,theme::GRAY,H::Left);
+            c.text(text_x,title_y,&c.fit(&np.title,15.0,W::Bold,text_width),15.0,W::Bold,theme::WHITE,H::Left);
+            c.text(text_x,title_y+18.0,&c.fit(&subtitle,size::BODY,W::Regular,text_width),size::BODY,W::Regular,theme::GRAY,H::Left);
             if with_lyrics {self.draw_music_lyrics(c);}
         }
 
         let tc=if has {theme::WHITE}else{Color32::from_rgb(78,78,82)};
-        let (bx,bw,by)=if with_lyrics {(44.0,176.0,82.0)}else{(96.0,221.0,92.6)};
+        let (bx,bw,by)=music_seek_geom(with_lyrics);
         let bar=c.hit_drag(bx-4.0,by-7.0,bw+8.0,14.0,"m-seek");
         let seek_position=if has && np.duration>0.0 && (bar.is_pointer_button_down_on() || bar.clicked() || bar.drag_stopped()) {
             bar.interact_pointer_pos().or_else(||ctx.input(|i|i.pointer.interact_pos()))
@@ -88,8 +92,8 @@ impl App {
             _=>np.position,
         });
         let frac=if np.duration>0.0 {(position/np.duration).clamp(0.0,1.0) as f32}else{0.0};
-        let (time_y,time_size,right)=if with_lyrics {(100.0,10.0,220.0)}else{(97.0,15.0,375.0)};
-        c.text(44.0,time_y,&mmss(position),time_size,W::Regular,tc,H::Left);
+        let (time_y,time_size,right)=(by+16.0,12.0,379.0);
+        c.text(40.0,time_y,&mmss(position),time_size,W::Regular,tc,H::Left);
         let remaining=if has && np.duration<=0.0{"--:--".into()}else{format!("-{}",mmss((np.duration-position).max(0.0)))};
         c.text(right,time_y,&remaining,time_size,W::Regular,tc,H::Right);
         let (bh,_)=c.hover_t(&bar);
@@ -119,7 +123,7 @@ impl App {
             }
         }
 
-        let y=118.0;
+        let y=crate::app::MUSIC_CTRL_Y;
         let ic=if has {theme::WHITE}else{Color32::from_rgb(88,88,92)};
         let btn=|x:f32,w:f32,id:&str| {
             let response=c.hit(x-w/2.0,y-12.0,w,24.0,id);
@@ -164,8 +168,8 @@ impl App {
         }
         // 岛上歌词是横向的，只在顶部停靠时提供。
         if has && !self.side() {
-            let (button,button_card)=capsule(c,279.0,108.0,68.0,20.0,"m-island-lyrics",if self.settings.island_lyrics {Color32::from_gray(39)}else{Color32::from_gray(22)},Color32::from_gray(47));
-            button_card.text(313.0,122.0,"岛上歌词",10.0,W::Semibold,if self.settings.island_lyrics {theme::WHITE}else{theme::GRAY},H::Center);
+            let (button,button_card)=capsule(c,279.0,y-10.0,68.0,20.0,"m-island-lyrics",if self.settings.island_lyrics {Color32::from_gray(39)}else{Color32::from_gray(22)},Color32::from_gray(47));
+            button_card.text(313.0,y+4.0,"岛上歌词",10.0,W::Semibold,if self.settings.island_lyrics {theme::WHITE}else{theme::GRAY},H::Center);
             if button.on_hover_text(if self.settings.island_lyrics {"关闭收起时的歌词"}else{"收起时显示当前歌词"}).clicked() {
                 self.settings.island_lyrics=!self.settings.island_lyrics;
                 self.settings.save();
@@ -186,7 +190,7 @@ impl App {
         let ctx=c.ui.ctx();
         let bounds=MUSIC_VOLUME_RECT;
         let panel=c.rect(bounds.min.x,bounds.min.y,bounds.width(),bounds.height());
-        let trigger=c.rect(354.0,106.0,26.0,24.0);
+        let trigger=c.rect(354.0,crate::app::MUSIC_CTRL_Y-12.0,26.0,24.0);
         if self.music_volume_open && ctx.input(|i|i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p|!panel.contains(p) && !trigger.contains(p))){
             self.music_volume_open=false;
         }
@@ -199,34 +203,41 @@ impl App {
         popup.hit(bounds.min.x,bounds.min.y,bounds.width(),bounds.height(),"m-volume-surface");
         popup.fill(bounds.min.x,bounds.min.y,bounds.width(),bounds.height(),12.0,Color32::from_gray(36));
         popup.stroke(bounds.min.x,bounds.min.y,bounds.width(),bounds.height(),12.0,1.0,Color32::from_gray(60));
-        let track=popup.hit_drag(351.0,27.0,32.0,54.0,"m-volume-track");
+        let track_top=bounds.min.y+26.0;
+        let track_bottom=track_top+43.0;
+        let track=popup.hit_drag(351.0,track_top-5.0,32.0,54.0,"m-volume-track");
         let mut command=None;
         if popup.live && (track.clicked() || track.dragged() || track.is_pointer_button_down_on()) {
             if let Some(pointer)=track.interact_pointer_pos(){
-                command=Some(Transport::SetVolume(((75.0-popup.to_local(pointer).y)/43.0*100.0).round().clamp(0.0,100.0) as u32));
+                command=Some(Transport::SetVolume(((track_bottom-popup.to_local(pointer).y)/43.0*100.0).round().clamp(0.0,100.0) as u32));
             }
         }else if popup.live && panel.contains(ctx.pointer_hover_pos().unwrap_or(Pos2::ZERO)) {
             let delta=ctx.input(|i|i.raw_scroll_delta.y);
             if delta.abs()>0.5{command=Some(Transport::SetVolume((volume as f32+delta/120.0*4.0).round().clamp(0.0,100.0) as u32));}
         }
-        let mute=popup.hit(353.0,82.0,28.0,20.0,"m-volume-mute").on_hover_text(if muted{"恢复音乐音量"}else{"静音音乐，保留当前音量"});
+        let mute_y=bounds.min.y+76.0;
+        let mute=popup.hit(353.0,mute_y,28.0,20.0,"m-volume-mute").on_hover_text(if muted{"恢复音乐音量"}else{"静音音乐，保留当前音量"});
         let (hover,press)=popup.hover_t(&mute);
         if popup.live && mute.clicked(){command=Some(Transport::SetMute(!muted));}
         if let Some(command)=command {self.change_music_volume(command,cmds);}
         let (volume,muted)=self.music_volume_ui.unwrap_or((volume,muted));
         let ink=if muted{theme::GRAY}else{theme::WHITE};
-        popup.centered_text(367.0,20.0,&format!("{volume}%"),10.5,W::Semibold,ink,H::Center);
-        popup.fill(364.5,32.0,5.0,43.0,2.5,Color32::from_gray(68));
-        let head=75.0-43.0*volume as f32/100.0;
-        if volume>0 {popup.fill(364.5,head,5.0,(75.0-head).max(2.5),2.5,ink);}
+        popup.centered_text(367.0,bounds.min.y+14.0,&format!("{volume}%"),10.5,W::Semibold,ink,H::Center);
+        popup.fill(364.5,track_top,5.0,43.0,2.5,Color32::from_gray(68));
+        let head=track_bottom-43.0*volume as f32/100.0;
+        if volume>0 {popup.fill(364.5,head,5.0,(track_bottom-head).max(2.5),2.5,ink);}
         popup.circle(367.0,head,if track.dragged(){5.5}else{4.5},ink);
-        popup.fill(353.0,82.0,28.0,20.0,6.0,paint::mix(theme::BTN,theme::BTN_HOVER,if muted{1.0}else{hover}));
-        popup.scaled(367.0,92.0,1.0-0.06*press).centered_text(367.0,92.0,if muted{"恢复"}else{"静音"},9.5,W::Semibold,theme::WHITE,H::Center);
+        popup.fill(353.0,mute_y,28.0,20.0,6.0,paint::mix(theme::BTN,theme::BTN_HOVER,if muted{1.0}else{hover}));
+        popup.scaled(367.0,mute_y+10.0,1.0-0.06*press).centered_text(367.0,mute_y+10.0,if muted{"恢复"}else{"静音"},9.5,W::Semibold,theme::WHITE,H::Center);
     }
 
     fn draw_music_lyrics(&mut self,c:&Card) {
-        let col=c.clipped(243.0,28.0,136.0,74.0);
-        c.seg((233.0,32.0),(233.0,98.0),1.0,Color32::from_gray(35));
+        // 歌词在歌手下面铺开，比原来的右侧窄栏能多看几行。
+        let x=36.0;
+        let y=86.0;
+        let w=347.0;
+        let h=62.0;
+        let col=c.clipped(x,y,w,h);
         if let Some(lyrics)=&self.ly.lyrics {
             let current=if lyrics.synced {lyrics.index_at(self.lyric_position())}else{Some(0)};
             let target=current.unwrap_or(0);
@@ -237,30 +248,29 @@ impl App {
             }
             let position=c.ui.ctx().animate_value_with_time(id,target as f32,0.3);
             let first=(position.floor() as usize).saturating_sub(2);
-            for (index,line) in lyrics.lines.iter().enumerate().skip(first).take(6) {
+            for (index,line) in lyrics.lines.iter().enumerate().skip(first).take(7) {
                 let distance=index as f32-position;
-                if distance.abs()>2.2 {continue;}
+                if distance.abs()>1.6 {continue;}
                 let active=current==Some(index);
                 let ink=if active {theme::WHITE}else{theme::GRAY};
-                let row=col.faded((1.0-distance.abs()*0.35).clamp(0.0,1.0));
-                let font=row.font(if active {12.0}else{10.0},if active {W::Semibold}else{W::Regular});
-                // 维语等从右往左的歌词：先按阅读顺序分行再逐行转换（#200）。
-                let text=crate::rtl_text::display_wrapped(&line.text,132.0*c.s,|s|row.painter.layout_no_wrap(s.to_owned(),font.clone(),ink).size().x).into_owned();
-                let mut job=egui::text::LayoutJob::simple(text,font,ink,132.0*c.s);
-                job.wrap.max_rows=if active {3}else{1};
+                let row=col.faded((1.0-distance.abs()*0.42).clamp(0.0,1.0));
+                let font=row.font(if active {12.0}else{10.5},if active {W::Semibold}else{W::Regular});
+                let text=crate::rtl_text::display_wrapped(&line.text,(w-8.0)*c.s,|s|row.painter.layout_no_wrap(s.to_owned(),font.clone(),ink).size().x).into_owned();
+                let mut job=egui::text::LayoutJob::simple(text,font,ink,(w-8.0)*c.s);
+                job.wrap.max_rows=if active {2}else{1};
                 job.wrap.break_anywhere=true;
                 let galley=row.painter.layout_job(job);
-                let y=64.0+distance*29.0-galley.size().y/(2.0*c.s);
-                row.painter.galley(row.pos(246.0,y),galley,ink);
+                let line_y=y+h/2.0+distance*22.0-galley.size().y/(2.0*c.s);
+                row.painter.galley(row.pos(x+4.0,line_y),galley,ink);
             }
-            if !lyrics.synced {col.text(246.0,39.0,"文本歌词",8.0,W::Regular,theme::GRAY,H::Left);}
+            if !lyrics.synced {col.text(x+4.0,y+12.0,"文本歌词",8.0,W::Regular,theme::GRAY,H::Left);}
         } else {
             let status=if self.ly.loading {"正在查找歌词…"}else if let Some(error)=&self.ly.error {error.label()}else{"暂无歌词"};
-            let galley=col.painter.layout(status.into(),col.font(10.0,W::Regular),theme::GRAY,130.0*c.s);
-            col.painter.galley(col.pos(246.0,61.0-galley.size().y/(2.0*c.s)),galley,theme::GRAY);
+            let galley=col.painter.layout(status.into(),col.font(12.0,W::Regular),theme::GRAY,(w-8.0)*c.s);
+            col.painter.galley(col.pos(x+4.0,y+h/2.0-galley.size().y/(2.0*c.s)),galley,theme::GRAY);
             if self.ly.error.is_some() {
-                col.text(246.0,87.0,"点击重试",9.0,W::Regular,theme::GRAY,H::Left);
-                if c.hit(243.0,28.0,136.0,74.0,"lyrics-retry").on_hover_text("重新查询当前歌曲的歌词").clicked(){self.ly.key.clear();self.ly.manual_retry=true;}
+                col.text(x+4.0,y+h-8.0,"点击重试",9.0,W::Regular,theme::GRAY,H::Left);
+                if c.hit(x,y,w,h,"lyrics-retry").on_hover_text("重新查询当前歌曲的歌词").clicked(){self.ly.key.clear();self.ly.manual_retry=true;}
             }
         }
     }

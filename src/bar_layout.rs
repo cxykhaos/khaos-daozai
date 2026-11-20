@@ -41,6 +41,10 @@ pub(crate) struct Layout {
     pub x: Vec<Option<f32>>,
     pub widths:Vec<f32>,
     quotas:usize,
+    /// Clash 芯片宽度。大于 0 时画在额度组左侧。
+    pub clash_lead: f32,
+    /// 没有 AI 额度时，Clash 芯片的中心。
+    pub clash_x: Option<f32>,
 }
 
 impl Layout {
@@ -71,9 +75,53 @@ impl Layout {
         }
         let width=cursor-12.0+16.0;
         for value in x.iter_mut().flatten() {*value-=width/2.0;}
-        Self {width:width.max(96.0),x,widths,quotas}
+        Self {width:width.max(96.0),x,widths,quotas,clash_lead:0.0,clash_x:None}
     }
     pub fn quota_slots(&self)->impl Iterator<Item=usize> { (0..self.quotas).map(quota_slot) }
+    /// 把 Clash 芯片放到 AI 额度左边，两侧保留和其它常驻图标一样的间距。
+    pub fn place_clash(&mut self, order: &[usize], width: f32) {
+        self.clash_lead = width.max(0.0);
+        self.clash_x = None;
+        if width <= 0.0 { return; }
+        let shift = width + 12.0;
+        let left = self.quota_slots().filter_map(|slot| self.x[slot].map(|x| x - self.widths[slot] / 2.0)).fold(f32::INFINITY, f32::min);
+        if left.is_finite() {
+            for x in self.x.iter_mut().flatten() {
+                if *x >= left - 0.5 { *x += shift; }
+            }
+            self.width += shift;
+            for x in self.x.iter_mut().flatten() { *x -= shift / 2.0; }
+            return;
+        }
+        let order = if valid_order(order) { order.to_vec() } else { DEFAULT_ORDER.to_vec() };
+        let spot = order.iter().position(|slot| *slot == QUOTA).unwrap_or(0);
+        let before = order[..spot].iter().rev().find_map(|&slot| self.x.get(slot).copied().flatten().map(|x| x + self.widths[slot] / 2.0));
+        let after = order[spot + 1..].iter().find_map(|&slot| self.x.get(slot).copied().flatten().map(|x| x - self.widths[slot] / 2.0));
+        match (before, after) {
+            (_, Some(edge)) => {
+                for x in self.x.iter_mut().flatten() {
+                    if *x >= edge - 0.5 { *x += shift; }
+                }
+                self.width += shift;
+                for x in self.x.iter_mut().flatten() { *x -= shift / 2.0; }
+                self.clash_x = Some(edge + shift / 2.0 - 12.0 - width / 2.0);
+            }
+            (Some(edge), None) => {
+                self.width += shift;
+                for x in self.x.iter_mut().flatten() { *x -= shift / 2.0; }
+                self.clash_x = Some(edge - shift / 2.0 + 12.0 + width / 2.0);
+            }
+            (None, None) => {
+                self.width = (width + 32.0).max(96.0);
+                self.clash_x = Some(0.0);
+            }
+        }
+    }
+    pub fn clash_anchor(&self) -> Option<f32> {
+        if self.clash_lead <= 0.0 { return None; }
+        let left = self.quota_slots().filter_map(|slot| self.x[slot].map(|x| x - self.widths[slot] / 2.0)).fold(f32::INFINITY, f32::min);
+        if left.is_finite() { Some(left - 12.0 - self.clash_lead / 2.0) } else { self.clash_x }
+    }
     /// 把某个槽加宽 extra：其余槽对称让位并记入总宽。点数文字、时段时钟、天气温度共用。
     pub fn widen(&mut self,slot:usize,extra:f32){
         if extra<=0.0 {return;}
@@ -280,5 +328,24 @@ mod tests {
         for _ in 0..120 {motion.step(after.clone(),1.0/60.0,true);}
         assert!((motion.current().x[QUOTA].unwrap()-after.x[QUOTA].unwrap()).abs()<0.01);
         motion.step(before.clone(),1.0/60.0,false);assert_eq!(motion.current().x,before.x);
+    }
+    #[test]
+    fn clash_sits_immediately_left_of_the_quota_group() {
+        for order in [DEFAULT_ORDER, [FOCUS, MUSIC, QUOTA, CLOCK, WEATHER, PET, BATTERY]] {
+            for quotas in 0..=3 {
+                let mut layout = Layout::new(true, quotas, true, true, false, true, true);
+                layout.reorder(&order);
+                layout.place_clash(&order, 52.0);
+                let anchor = layout.clash_anchor().expect("Clash 应有位置");
+                if quotas > 0 {
+                    let left = layout.quota_slots().map(|slot| layout.x[slot].unwrap() - layout.widths[slot] / 2.0).fold(f32::INFINITY, f32::min);
+                    assert!((anchor + 26.0 + 12.0 - left).abs() < 0.6, "Clash 应在额度左侧：{anchor} {left}");
+                }
+                let mut boxes: Vec<_> = layout.x.iter().enumerate().filter_map(|(slot, x)| x.map(|x| (x - layout.widths[slot] / 2.0, x + layout.widths[slot] / 2.0))).collect();
+                boxes.push((anchor - 26.0, anchor + 26.0));
+                boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+                assert!(boxes.windows(2).all(|pair| pair[1].0 - pair[0].1 >= 6.9), "Clash 不应压住其它图标：{boxes:?}");
+            }
+        }
     }
 }

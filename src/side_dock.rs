@@ -21,14 +21,14 @@ pub const SIDE_HALF_EXTENT: f32 = 150.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum SideItem {
-    Clock, Weather, Battery(u8), Music, Focus, Bell,
+    Clock, Weather, Battery(u8), Clash, Music, Focus, Bell,
     /// AI 额度：账号下标（None 为「+N」）与高度。
     Quota(usize, f32),
 }
 
 impl SideItem {
     fn height(self, clock_seconds: bool) -> f32 {
-        match self { Self::Clock => if clock_seconds {46.0}else{32.0}, Self::Weather => 40.0, Self::Battery(n) => 20.0 * n.max(1) as f32, Self::Music => 18.0, Self::Focus => 22.0, Self::Bell => 22.0, Self::Quota(_, h) => h }
+        match self { Self::Clock => if clock_seconds {46.0}else{32.0}, Self::Weather => 40.0, Self::Battery(n) => 20.0 * n.max(1) as f32, Self::Clash => 32.0, Self::Music => 18.0, Self::Focus => 22.0, Self::Bell => 22.0, Self::Quota(_, h) => h }
     }
 }
 
@@ -41,11 +41,10 @@ impl App {
         let mut items = Vec::new();
         if self.settings.show_clock {items.push(SideItem::Clock);}
         if self.weather_pill().is_some() {items.push(SideItem::Weather);}
-        let battery_units=self.resident_powers.len()+usize::from(self.visible_clash().is_some() && !self.resident_powers.is_empty());
-        let battery_units=if self.resident_powers.is_empty() && self.visible_clash().is_some() {1} else {battery_units};
-        if self.settings.show_battery && battery_units>0 || self.visible_clash().is_some() { items.push(SideItem::Battery(battery_units.max(1) as u8)); }
+        if self.settings.show_battery && !self.resident_powers.is_empty() { items.push(SideItem::Battery(self.resident_powers.len().max(1) as u8)); }
         if self.media.is_shown() { items.push(SideItem::Music); }
         if self.pomo.running { items.push(SideItem::Focus); }
+        if self.visible_clash().is_some() { items.push(SideItem::Clash); }
         items.extend(self.quota_side_items().into_iter().map(|(index, h)| SideItem::Quota(index, h)));
         if self.t < self.notification_bell_until { items.push(SideItem::Bell); }
         items
@@ -137,17 +136,17 @@ impl App {
                 SideItem::Weather => self.draw_side_weather(c,cx,mid),
                 SideItem::Battery(_) => {
                     let powers=self.shown_powers(env);
-                    let clash=self.visible_clash().map(|usage|(usage.used_percent(),usage.summary()));
-                    let count=(powers.len()+usize::from(clash.is_some())).max(1) as f32;
+                    let count=powers.len().max(1) as f32;
                     let step=h/count;
                     for (index,chip) in powers.iter().enumerate() {
                         let y=y+step*(index as f32+0.5);
                         let shift=if chip.source.has_icon(){paint::MOUSE_SHIFT*0.72}else{0.0};
                         paint::battery(c, cx+shift, y, Some(chip.percent), chip.charging, 0.72, chip.source, &chip.name);
                     }
-                    if let Some((percent,tip))=clash {
-                        let y=y+step*(powers.len() as f32+0.5);
-                        paint::used_ring(c, cx, y, percent, 0.72, &tip);
+                },
+                SideItem::Clash => {
+                    if let Some(usage)=self.visible_clash() {
+                        paint::clash_stack(c, cx, mid, &usage.remaining_label(), &format!("Clash · {}", usage.summary()));
                     }
                 },
                 SideItem::Music => paint::playback_bars(c, cx, mid, self.t, self.media.playing, theme::WHITE),

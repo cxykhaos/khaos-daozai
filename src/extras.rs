@@ -1526,16 +1526,18 @@ impl App {
                                 }
                             }
                             ui.separator();
-                            setting_row(ui,"Clash 额度","本机 Clash 订阅的已用流量",&mut self.settings.show_clash);
+                            setting_row(ui,"天气","天气图标和温度，点击打开天气页",&mut self.settings.show_weather);
+                        });
+                        settings_label(ui,"额度显示");
+                        settings_card(ui,|ui|{
+                            setting_row(ui,"Clash 额度","每 30 秒读取本机 Clash 的剩余流量",&mut self.settings.show_clash);
                             if self.settings.show_clash {
                                 if let Some(usage)=&self.clash { settings_hint(ui,&usage.summary()); }
-                                else { settings_hint(ui,"打开 Clash 并刷新订阅后，常驻栏会显示已用流量。"); }
+                                else { settings_hint(ui,"打开 Clash 并刷新订阅后，常驻栏显示剩余流量。"); }
                             }
                             ui.separator();
-                            setting_row(ui,"天气","天气图标和温度，点击打开天气页",&mut self.settings.show_weather);
-                            ui.separator();
                             let before=self.quota.config.compact;
-                            setting_row(ui,"AI 额度","常驻账号；WorkBuddy 积分在前，DeepSeek 余额在最后",&mut self.quota.config.compact);
+                            setting_row(ui,"AI 额度","和 Clash 放在一起，显示剩余额度",&mut self.quota.config.compact);
                             if before!=self.quota.config.compact {self.quota.config.save();}
                         });
                         settings_label(ui,"功能页面");

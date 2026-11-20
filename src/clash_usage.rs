@@ -12,12 +12,14 @@ pub struct Usage {
 
 impl Usage {
     pub fn used(&self) -> u64 { self.upload.saturating_add(self.download).min(self.total) }
-    pub fn used_percent(&self) -> u8 {
-        if self.total == 0 { return 0; }
-        ((self.used() as f64 / self.total as f64) * 100.0).round().clamp(0.0, 100.0) as u8
+    pub fn remaining(&self) -> u64 { self.total.saturating_sub(self.used()) }
+    /// 常驻栏上的剩余流量，显示还剩多少，不显示已用百分比。
+    pub fn remaining_label(&self) -> String {
+        let gb = self.remaining() as f64 / 1024.0 / 1024.0 / 1024.0;
+        if gb >= 10.0 { format!("{gb:.0}G") } else { format!("{gb:.1}G") }
     }
     pub fn summary(&self) -> String {
-        let mut text = format!("{} 已用 {} / {}", self.name, gib(self.used()), gib(self.total));
+        let mut text = format!("{} 剩余 {} / {}", self.name, gib(self.remaining()), gib(self.total));
         if let Some(expire) = self.expire.and_then(|at| chrono::DateTime::from_timestamp(at, 0)) {
             text.push_str(&format!(" · {} 到期", expire.with_timezone(&chrono::Local).format("%Y-%m-%d")));
         }
@@ -112,10 +114,12 @@ items:
 "#;
         let usage = parse(text).unwrap();
         assert_eq!(usage.name, "tntv2.net.yaml");
-        assert_eq!(usage.used_percent(), 74);
         assert_eq!(gib(usage.used()), "224 GB");
+        assert_eq!(gib(usage.remaining()), "80 GB");
+        assert_eq!(usage.remaining_label(), "80G");
         assert_eq!(gib(usage.total), "304 GB");
         assert_eq!(usage.expire, Some(1798646400));
+        assert!(usage.summary().contains("剩余"));
         assert!(usage.summary().contains("到期"));
     }
 
@@ -123,7 +127,7 @@ items:
     #[ignore]
     fn live_local_clash_profile_has_usage() {
         let usage = load().expect("本机没有 Clash 流量");
-        assert!(usage.used_percent() > 0, "{}", usage.summary());
+        assert!(usage.remaining() < usage.total, "{}", usage.summary());
         assert!(usage.summary().contains("GB"));
     }
 }

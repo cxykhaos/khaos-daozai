@@ -41,7 +41,9 @@ pub fn spawn() -> Service {
                 if tx.send(next).is_err() { return; }
                 last = next;
             }
-            if stopped.recv_timeout(Duration::from_secs(60)) != Err(std::sync::mpsc::RecvTimeoutError::Timeout) { return; }
+            // 读不到时加快重试，连续两次失败就清掉电量，断开后不再留着旧百分比。
+            let wait = if found.is_none() { Duration::from_secs(5) } else { Duration::from_secs(60) };
+            if stopped.recv_timeout(wait) != Err(std::sync::mpsc::RecvTimeoutError::Timeout) { return; }
         }
     }).ok();
     Service { rx, stop }

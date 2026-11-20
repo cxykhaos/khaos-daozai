@@ -30,7 +30,13 @@ impl State {
     fn balance_loading(&self,id:&str)->bool{self.balance_text(id).is_none()&&(self.busy.contains(id)||!self.rows.contains_key(id))}
     /// 环类账号跟随在图标右侧的数字：有具体点数时取主周期剩余点数（如 Kiro 的 904）。
     fn ring_tail_text(&self,id:&str)->Option<String>{self.rows.get(id)?.as_ref().ok()?.rings().first()?.amount.as_ref().map(Amount::short)}
-    /// 常驻胶囊里紧跟图标的文字：余额类给余额，点数类给剩余点数。
+    /// 百分比额度直接写出剩余。两个窗口各占一行，仍放进原来的图标槽，不把常驻栏撑宽。
+    fn remaining_lines(&self,id:&str)->Option<Vec<String>>{
+        let rings=self.rows.get(id)?.as_ref().ok()?.rings();
+        if rings.is_empty()||rings.iter().any(|window|window.amount.is_some()){return None;}
+        Some(rings.iter().take(2).map(|window|format!("{:.0}",window.remaining)).collect())
+    }
+    /// 常驻胶囊里紧跟图标的文字：余额，或剩余点数。
     fn tail_text(&self,id:&str)->Option<String>{self.balance_text(id).or_else(||self.ring_tail_text(id))}
     pub fn load()->Self {
         if cfg!(test){return Self::default();}
@@ -402,13 +408,21 @@ impl App {
                 }
                 if c.hit(x-(27.0+extra)/2.0,1.0,27.0+extra,28.0,("quota-pin",&a.id)).clicked(){chosen=Some(a.id.clone());}continue;
             }
-            // 有具体点数的额度（如 Kiro）在环右侧跟一段剩余点数，与余额类的排布一致。
+            // 有具体点数的额度（如 Kiro）在环右侧跟一段剩余点数。百分比额度改成图标加剩余数字。
             let extra=(layout.widths[crate::bar_layout::quota_slot(position)]-27.0).max(0.0);
             let x=if extra>0.0{x-extra/2.0}else{x};
-            ring(c,a,snapshot,x,15.0,27.0,accent_colors(&self.quota.config,a));
-            if extra>0.0{let stale=self.quota.stale.contains_key(&a.id);if let Some(text)=self.quota.tail_text(&a.id){c.text(x+15.5,21.0,&text,theme::size::PILL_CLOCK,W::Bold,if stale{theme::GRAY}else{theme::WHITE},H::Left);}}
+            let stale=self.quota.stale.contains_key(&a.id);
+            if let Some(lines)=self.quota.remaining_lines(&a.id){
+                logo(c,a.provider,x-5.5,15.0,11.0);
+                let color=if stale{theme::GRAY}else{theme::WHITE};
+                if lines.len()==1{c.text(x+2.0,21.0,&lines[0],8.5,W::Bold,color,H::Left);}
+                else{c.text(x+2.0,13.5,&lines[0],7.5,W::Bold,color,H::Left);c.text(x+2.0,22.5,&lines[1],7.5,W::Bold,color,H::Left);}
+            }else{
+                ring(c,a,snapshot,x,15.0,27.0,accent_colors(&self.quota.config,a));
+                if extra>0.0{if let Some(text)=self.quota.tail_text(&a.id){c.text(x+15.5,21.0,&text,theme::size::PILL_CLOCK,W::Bold,if stale{theme::GRAY}else{theme::WHITE},H::Left);}}
+            }
             let mut same=self.quota.config.accounts.iter().filter(|other|other.provider==a.provider && other.enabled);
-            if same.clone().count()>1{let n=same.position(|other|other.id==a.id).unwrap_or(0)+1;c.circle(x+10.0,24.0,4.5,Color32::from_gray(225));c.text(x+10.0,26.8,&n.to_string(),6.5,W::Bold,Color32::BLACK,H::Center);}
+            if same.clone().count()>1{let n=same.position(|other|other.id==a.id).unwrap_or(0)+1;let badge=if self.quota.remaining_lines(&a.id).is_some(){x-10.0}else{x+10.0};c.circle(badge,24.0,4.5,Color32::from_gray(225));c.text(badge,26.8,&n.to_string(),6.5,W::Bold,Color32::BLACK,H::Center);}
             let summary=snapshot.map(|s|s.rings().iter().map(|w|w.summary()).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||if self.quota.busy.contains(&a.id){"正在更新".into()}else{"额度暂不可用".into()});
             if bar_tooltip(c.hit(x-14.0,1.0,28.0+extra,28.0,("quota-pin",&a.id)),format!("{} · {}\n{}",a.provider.name(),a.alias,summary)).clicked(){chosen=Some(a.id.clone());}
         }
@@ -1121,6 +1135,13 @@ impl App {
                 c.ui.ctx().request_repaint_after(std::time::Duration::from_millis(160));
                 summary="正在更新".into();
             }else{summary="余额暂不可用".into();}
+        }else if let Some(lines)=self.quota.remaining_lines(&a.id){
+            logo(c,a.provider,cx,mid-9.0,14.0);
+            let stale=self.quota.stale.contains_key(&a.id);
+            let color=if stale{theme::GRAY}else{theme::WHITE};
+            if lines.len()==1{c.text(cx,mid+10.0,&lines[0],9.0,W::Bold,color,H::Center);}
+            else{c.text(cx,mid+6.0,&lines[0],8.0,W::Bold,color,H::Center);c.text(cx,mid+15.0,&lines[1],8.0,W::Bold,color,H::Center);}
+            summary=snapshot.as_ref().map(|s|s.rings().iter().map(|w|w.summary()).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||lines.join(" · "));
         }else{
             ring(c,&a,snapshot.as_ref(),cx,mid,26.0,accent_colors(&self.quota.config,&a));
             let mut same=self.quota.config.accounts.iter().filter(|other|other.provider==a.provider && other.enabled);
