@@ -23,6 +23,7 @@ impl crate::app::App {
         for (position,extra) in self.quota_balance_layout(ui.ctx()){layout.balance_tail(position,extra);}
         let power_extra=crate::paint::power_extra(&self.resident_powers);
         if power_extra>0.0 { layout.widen(BATTERY,power_extra); }
+        if self.visible_clash().is_some() && !self.resident_powers.is_empty() { layout.widen(BATTERY,28.0); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(ui.ctx()){layout.widen(WEATHER,extra);}
@@ -70,19 +71,21 @@ impl crate::app::App {
             let dx=if is_dragged{pointer.map(|p|((p.x-origin.x)/scale-(left+width/2.0)).clamp(-left,layout.width-left-width)).unwrap_or(0.0)}else{0.0};
             if is_dragged {ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
             else if response.hovered(){ui.painter().rect_filled(rect,6.0,Color32::from_white_alpha(18));}
-            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>self.settings.show_battery&&self.resident_power.0.is_some(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0,MUSIC=>self.media.is_shown(),FOCUS=>self.pomo.running,_=>true};
+            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>!self.resident_powers.is_empty()||self.visible_clash().is_some(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0,MUSIC=>self.media.is_shown(),FOCUS=>self.pomo.running,_=>true};
             let c=card.shifted(dx,0.0).faded(if active||is_dragged{1.0}else{0.38}).ghost();
             match slot{
                 BATTERY=>{
                     let powers=self.resident_powers.clone();
-                    if powers.len()<=1 {
+                    let clash=self.visible_clash().cloned();
+                    let single=powers.len()<=1 && clash.is_none();
+                    if single {
                         let source=powers.first().map(|chip|chip.source).unwrap_or(self.resident_source);
                         let shift=if source.has_icon(){crate::paint::MOUSE_SHIFT}else{0.0};
                         let (percent,charging)=powers.first().map(|chip|(Some(chip.percent),chip.charging)).unwrap_or(self.resident_power);
-                        let name=powers.first().map(|chip|chip.name.as_str()).unwrap_or("");
-                        paint::battery(&c,x+shift,15.0,percent,charging,1.0,source,name);
+                        let name=powers.first().map(|chip|chip.name.clone()).unwrap_or_default();
+                        paint::battery(&c,x+shift,15.0,percent,charging,1.0,source,&name);
                     } else {
-                        let span=20.0+crate::paint::power_extra(&powers);
+                        let span=20.0+crate::paint::power_extra(&powers)+if clash.is_some()&&!powers.is_empty(){28.0}else{0.0};
                         let mut px=x-span/2.0;
                         for (index,chip) in powers.iter().enumerate() {
                             if index>0 {px+=6.0;}
@@ -90,6 +93,10 @@ impl crate::app::App {
                             let ring=px+if chip.source.has_icon(){w-10.0}else{w/2.0};
                             paint::battery(&c,ring,15.0,Some(chip.percent),chip.charging,1.0,chip.source,&chip.name);
                             px+=w;
+                        }
+                        if let Some(usage)=clash {
+                            if !powers.is_empty() {px+=6.0;}
+                            paint::used_ring(&c,px+11.0,15.0,usage.used_percent(),1.0,&usage.summary());
                         }
                     }
                 },

@@ -13,6 +13,24 @@ pub struct Device {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeviceKind { Bone, Earbuds, Headphones, Speaker, Keyboard, Mouse, Gamepad, Phone, Other }
 
+/// 蓝牙地址：实例名里最后一段 12 位十六进制。免提节点的电量不在 `DEV_` 那一段上。
+pub(crate) fn bluetooth_address(text: &str) -> Option<String> {
+    let upper = text.to_ascii_uppercase().replace(':', "");
+    let bytes = upper.as_bytes();
+    let mut last = None;
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_hexdigit() {
+            let start = index;
+            while index < bytes.len() && bytes[index].is_ascii_hexdigit() { index += 1; }
+            if index - start == 12 { last = Some(upper[start..index].to_owned()); }
+        } else {
+            index += 1;
+        }
+    }
+    last
+}
+
 fn device_kind(name: &str, classic: bool, class: Option<u32>) -> DeviceKind {
     use DeviceKind::*;
     let name = name.to_lowercase();
@@ -40,7 +58,7 @@ fn device_kind(name: &str, classic: bool, class: Option<u32>) -> DeviceKind {
             }
         }
     }
-    if ["headphone", "headset", "耳机"].iter().any(|s| name.contains(s)) { Headphones } else { Other }
+    if ["headphone", "headset", "hands-free", "耳机"].iter().any(|s| name.contains(s)) { Headphones } else { Other }
 }
 
 impl Device {
@@ -54,13 +72,13 @@ impl Device {
 }
 
 #[derive(Default)]
-struct Cache {devices:Vec<Device>,battery_at:Option<Instant>}
+struct Cache {devices:Vec<Device>,battery_at:Option<Instant>,reported:Vec<Device>,reported_at:Option<Instant>}
 impl Cache {
     fn update(&mut self,mut devices:Vec<Device>,now:Instant,read:impl FnOnce(&[Device])->Result<Vec<(String,u8)>,()>)->Vec<Device>{
         let changed=devices.len()!=self.devices.len() || devices.iter().any(|d|!self.devices.iter().any(|old|old.id==d.id));
         for device in &mut devices {device.battery=self.devices.iter().find(|old|old.id==device.id).and_then(|old|old.battery);}
         if devices.is_empty(){self.battery_at=None;}
-        else if changed || self.battery_at.is_none_or(|at|now.duration_since(at)>=Duration::from_secs(60)) {
+        else if changed || self.battery_at.is_none_or(|at|now.duration_since(at)>=if devices.iter().any(|device|device.battery.is_none()){Duration::from_secs(10)}else{Duration::from_secs(60)}) {
             // 失败同样限频，避免设备驱动异常时每两秒重新枚举整机。
             self.battery_at=Some(now);
             if let Ok(levels)=read(&devices){for device in &mut devices {device.battery=levels.iter().find(|(id,_)|id==&device.id).map(|(_,level)|*level);}}
@@ -82,6 +100,8 @@ pub fn spawn() -> Service {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let (stop, stopped)=std::sync::mpsc::channel();
     std::thread::Builder::new().name("daozai-bluetooth".into()).spawn(move || {
+        #[cfg(windows)]
+        unsafe { let _ = windows::Win32::System::WinRT::RoInitialize(windows::Win32::System::WinRT::RO_INIT_MULTITHREADED); }
         #[cfg(windows)]
         let mut cache=Cache::default();
         loop {
@@ -115,7 +135,7 @@ fn query(cache:&mut Cache) -> Result<Vec<Device>, ()> {
             let Ok(name) = info.Name() else { continue };
             let name = name.to_string();
             if name.trim().is_empty() { continue; }
-            let address = id.to_string().rsplit('-').next().unwrap_or_default().replace(':', "").to_ascii_uppercase();
+            let address = bluetooth_address(&id.to_string()).unwrap_or_else(|| id.to_string());
             if devices.iter().any(|d: &Device| d.id == address) { continue; }
             let kind=if let Some(old)=cache.devices.iter().find(|old|old.id==address && old.name==name){old.kind}else{
                 let class=if classic {
@@ -133,11 +153,38 @@ fn query(cache:&mut Cache) -> Result<Vec<Device>, ()> {
         }
     }
     devices.sort_by(|a,b|a.id.cmp(&b.id));
-    Ok(cache.update(devices,Instant::now(),read_batteries))
+    let now = Instant::now();
+    let extra = std::cell::RefCell::new(None);
+    let mut found = cache.update(devices, now, |known| {
+        let (levels, more) = scan_batteries(known)?;
+        *extra.borrow_mut() = Some(more);
+        Ok(levels)
+    });
+    if let Some(more) = extra.into_inner() {
+        cache.reported = more;
+        cache.reported_at = Some(now);
+    } else if found.is_empty() && cache.reported_at.is_none_or(|at| now.duration_since(at) >= Duration::from_secs(30)) {
+        if let Ok((_, more)) = scan_batteries(&[]) {
+            cache.reported = more;
+            cache.reported_at = Some(now);
+        }
+    }
+    for device in &cache.reported {
+        if let Some(existing) = found.iter_mut().find(|item| item.id == device.id) {
+            if existing.battery.is_none() { existing.battery = device.battery; }
+        } else {
+            found.push(device.clone());
+        }
+    }
+    if !cache.reported.is_empty() {
+        found.sort_by(|a, b| a.id.cmp(&b.id));
+        cache.devices = found.clone();
+    }
+    Ok(found)
 }
 
 #[cfg(windows)]
-fn read_batteries(devices:&[Device])->Result<Vec<(String,u8)>,()> {
+fn scan_batteries(devices:&[Device])->Result<(Vec<(String,u8)>, Vec<Device>),()> {
     use windows::core::{GUID, PCWSTR};
     use windows::Win32::Devices::DeviceAndDriverInstallation::*;
     use windows::Win32::Devices::Properties::DEVPROPKEY;
@@ -149,6 +196,7 @@ fn read_batteries(devices:&[Device])->Result<Vec<(String,u8)>,()> {
         pid: 2,
     };
     let mut batteries: Vec<(String, u8)> = Vec::new();
+    let mut extra = Vec::new();
     unsafe {
         let set = SetupDiGetClassDevsW(None, PCWSTR::null(), HWND::default(), DIGCF_PRESENT | DIGCF_ALLCLASSES)
             .map_err(|_| ())?;
@@ -161,16 +209,47 @@ fn read_batteries(devices:&[Device])->Result<Vec<(String,u8)>,()> {
                 break;
             }
             let Some(instance) = instance_id(set, &data) else { continue };
-            let upper = instance.to_ascii_uppercase();
-            if !devices.iter().any(|device|upper.contains(&device.id)){continue;}
-            if let Some(level) = byte_prop(set, &data, &BATTERY).filter(|b| *b <= 100) {
-                batteries.push((upper.clone(), level));
+            if !instance.to_ascii_uppercase().contains("BTH") { continue; }
+            let Some(address) = bluetooth_address(&instance) else { continue };
+            if address.chars().all(|c| c == '0') { continue; }
+            let Some(level) = byte_prop(set, &data, &BATTERY).filter(|b| *b <= 100) else { continue };
+            if devices.iter().any(|device| device.id == address) {
+                if !batteries.iter().any(|(id, _)| id == &address) { batteries.push((address, level)); }
+            } else if !extra.iter().any(|device: &Device| device.id == address) {
+                let raw = friendly_name(set, &data).unwrap_or_else(|| "蓝牙设备".into());
+                let kind = device_kind(&raw, true, None);
+                extra.push(Device { id: address, name: display_name(&raw), battery: Some(level), kind });
             }
         }
         // 每次枚举后释放设备列表句柄。
         let _ = SetupDiDestroyDeviceInfoList(set);
     }
-    Ok(devices.iter().filter_map(|device|batteries.iter().find(|(node,_)|node.contains(&device.id)).map(|(_,level)|(device.id.clone(),*level))).collect())
+    let levels=devices.iter().filter_map(|device|batteries.iter().find(|(address,_)|address==&device.id).map(|(_,level)|(device.id.clone(),*level))).collect();
+    Ok((levels, extra))
+}
+
+#[cfg(windows)]
+fn display_name(name: &str) -> String {
+    let mut text = name.trim().to_owned();
+    for suffix in [" Hands-Free AG", " Hands-Free", " Stereo", " Avrcp Transport"] {
+        if let Some(stripped) = text.strip_suffix(suffix) { text = stripped.trim().to_owned(); }
+    }
+    if text.is_empty() { "蓝牙设备".into() } else { text }
+}
+
+#[cfg(windows)]
+unsafe fn friendly_name(
+    set: windows::Win32::Devices::DeviceAndDriverInstallation::HDEVINFO,
+    data: &windows::Win32::Devices::DeviceAndDriverInstallation::SP_DEVINFO_DATA,
+) -> Option<String> {
+    use windows::Win32::Devices::DeviceAndDriverInstallation::{SetupDiGetDeviceRegistryPropertyW, SPDRP_FRIENDLYNAME};
+    let mut buf = vec![0u8; 512];
+    let mut need = 0u32;
+    SetupDiGetDeviceRegistryPropertyW(set, data, SPDRP_FRIENDLYNAME, None, Some(&mut buf), Some(&mut need)).ok()?;
+    let chars = (need as usize / 2).saturating_sub(1).min(buf.len() / 2);
+    let wide = buf[..chars * 2].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>();
+    let name = String::from_utf16_lossy(&wide).trim().to_owned();
+    if name.is_empty() { None } else { Some(name) }
 }
 
 #[cfg(windows)]
@@ -193,13 +272,16 @@ unsafe fn byte_prop(
 ) -> Option<u8> {
     use windows::Win32::Devices::DeviceAndDriverInstallation::SetupDiGetDevicePropertyW;
     use windows::Win32::Devices::Properties::DEVPROPTYPE;
-    // DEVPROP_TYPE_BYTE
-    const BYTE: DEVPROPTYPE = DEVPROPTYPE(0x3);
     let mut ty = DEVPROPTYPE::default();
-    let mut buf = [0u8; 1];
+    let mut buf = [0u8; 4];
     let mut size = 0u32;
     SetupDiGetDevicePropertyW(set, data, key, &mut ty, Some(&mut buf), Some(&mut size), 0).ok()?;
-    (ty == BYTE && size == 1).then_some(buf[0])
+    let level = match (ty.0, size) {
+        (0x3, 1..) => Some(buf[0]),
+        (0x5 | 0x7, 1..) => Some(u32::from_le_bytes([buf[0], buf.get(1).copied().unwrap_or(0), buf.get(2).copied().unwrap_or(0), buf.get(3).copied().unwrap_or(0)]) as u8),
+        _ => None,
+    };
+    level
 }
 
 #[cfg(test)]
@@ -207,6 +289,21 @@ mod tests {
     use super::*;
 
     fn device(id:&str)->Device {Device{id:id.into(),name:id.into(),battery:None,kind:DeviceKind::Mouse}}
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn live_connected_audio_reports_battery() {
+        let (_, extra) = scan_batteries(&[]).expect("读取蓝牙电量失败");
+        assert!(extra.iter().any(|device| device.kind == DeviceKind::Headphones && device.battery.is_some()), "没有读到耳机电量");
+    }
+
+    #[test]
+    fn headphone_address_is_the_last_twelve_hex_digits() {
+        assert_eq!(bluetooth_address(r"BTHENUM\{0000111E-0000-1000-8000-00805F9B34FB}_LOCALMFG&0046\B&62612BF&0&646876356FC2_C00000000").as_deref(), Some("646876356FC2"));
+        assert_eq!(bluetooth_address("Bluetooth#Bluetoothc8:2b:6b:aa:bb:cc-64:68:76:35:6f:c2").as_deref(), Some("646876356FC2"));
+        assert_eq!(bluetooth_address(r"BTHENUM\DEV_F0BE253F164C\7&BLUETOOTHDEVICE_F0BE253F164C").as_deref(), Some("F0BE253F164C"));
+    }
 
     #[test]
     fn idle_bluetooth_does_not_rescan_all_hardware_every_two_seconds(){

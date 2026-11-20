@@ -512,6 +512,23 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     }
 }
 
+/// 流量环：中间是已用百分比，和 Clash 首页的进度一致。
+pub fn used_ring(c: &Card, cx: f32, cy: f32, percent: u8, k: f32, tip: &str) {
+    let r = 8.2 * k;
+    let w = 2.6 * k;
+    let level = percent as f32 / 100.0;
+    let col = if level >= 0.9 { theme::RED } else { theme::BLUE };
+    c.ring(cx, cy, r, w, alpha(col, 0.22));
+    let a0 = -FRAC_PI_2;
+    if level >= 0.999 { c.ring(cx, cy, r, w, col); }
+    else { c.arc(cx, cy, r, a0, a0 + TAU * level.max(0.02), w, col); }
+    c.text(cx, cy + 2.4 * k, &format!("{percent}"), 6.2 * k, W::Bold, col, H::Center);
+    if c.live {
+        let rect = c.rect(cx - r, cy - r, r * 2.0, r * 2.0);
+        c.ui.interact(rect, Id::new(("clash-usage", cx.to_bits(), cy.to_bits())), Sense::hover()).on_hover_text(tip);
+    }
+}
+
 fn device_icon(c: &Card, source: PowerSource, x: f32, y: f32, size: f32, color: Color32) {
     let rect = c.rect(x, y, size, size);
     let icon = match source {

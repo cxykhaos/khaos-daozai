@@ -1498,21 +1498,38 @@ impl App {
                             ui.separator();
                             setting_row(ui,"电量","勾选要显示在岛上的电量；没读到的设备不会出现",&mut self.settings.show_battery);
                             if self.settings.show_battery {
-                                if self.power_offers.is_empty() {
+                                let offers=self.power_offers.clone();
+                                let waiting=self.power_waiting.clone();
+                                if offers.is_empty() && waiting.is_empty() {
                                     settings_hint(ui,"连上带电量的鼠标、耳机或其他设备后，可以在这里选择。");
                                 } else {
-                                    let offers=self.power_offers.clone();
                                     for chip in offers {
                                         let mut on=!self.settings.battery_hidden.iter().any(|id|id==&chip.id);
                                         let title=format!("{}  {}%",chip.name,chip.percent);
-                                        setting_row(ui,&title,"",&mut on);
+                                        setting_row(ui,&title,"显示在岛上",&mut on);
                                         let hidden=self.settings.battery_hidden.iter().any(|id|id==&chip.id);
                                         if on==hidden {
                                             if on {self.settings.battery_hidden.retain(|id|id!=&chip.id);}
-                                            else if !hidden {self.settings.battery_hidden.push(chip.id.clone());}
+                                            else if !hidden {self.settings.battery_hidden.push(chip.id);}
+                                        }
+                                    }
+                                    for (id,name) in waiting {
+                                        let mut on=!self.settings.battery_hidden.iter().any(|hidden|hidden==&id);
+                                        let title=format!("{name}  暂无电量");
+                                        setting_row(ui,&title,"读到电量后显示",&mut on);
+                                        let hidden=self.settings.battery_hidden.iter().any(|hidden|hidden==&id);
+                                        if on==hidden {
+                                            if on {self.settings.battery_hidden.retain(|hidden|hidden!=&id);}
+                                            else if !hidden {self.settings.battery_hidden.push(id);}
                                         }
                                     }
                                 }
+                            }
+                            ui.separator();
+                            setting_row(ui,"Clash 额度","本机 Clash 订阅的已用流量",&mut self.settings.show_clash);
+                            if self.settings.show_clash {
+                                if let Some(usage)=&self.clash { settings_hint(ui,&usage.summary()); }
+                                else { settings_hint(ui,"打开 Clash 并刷新订阅后，常驻栏会显示已用流量。"); }
                             }
                             ui.separator();
                             setting_row(ui,"天气","天气图标和温度，点击打开天气页",&mut self.settings.show_weather);

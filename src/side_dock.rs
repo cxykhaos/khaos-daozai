@@ -41,7 +41,9 @@ impl App {
         let mut items = Vec::new();
         if self.settings.show_clock {items.push(SideItem::Clock);}
         if self.weather_pill().is_some() {items.push(SideItem::Weather);}
-        if self.settings.show_battery && self.resident_power.0.is_some() { items.push(SideItem::Battery(self.resident_powers.len().max(1) as u8)); }
+        let battery_units=self.resident_powers.len()+usize::from(self.visible_clash().is_some() && !self.resident_powers.is_empty());
+        let battery_units=if self.resident_powers.is_empty() && self.visible_clash().is_some() {1} else {battery_units};
+        if self.settings.show_battery && battery_units>0 || self.visible_clash().is_some() { items.push(SideItem::Battery(battery_units.max(1) as u8)); }
         if self.media.is_shown() { items.push(SideItem::Music); }
         if self.pomo.running { items.push(SideItem::Focus); }
         items.extend(self.quota_side_items().into_iter().map(|(index, h)| SideItem::Quota(index, h)));
@@ -135,12 +137,17 @@ impl App {
                 SideItem::Weather => self.draw_side_weather(c,cx,mid),
                 SideItem::Battery(_) => {
                     let powers=self.shown_powers(env);
-                    let count=powers.len().max(1) as f32;
+                    let clash=self.visible_clash().map(|usage|(usage.used_percent(),usage.summary()));
+                    let count=(powers.len()+usize::from(clash.is_some())).max(1) as f32;
                     let step=h/count;
                     for (index,chip) in powers.iter().enumerate() {
                         let y=y+step*(index as f32+0.5);
                         let shift=if chip.source.has_icon(){paint::MOUSE_SHIFT*0.72}else{0.0};
                         paint::battery(c, cx+shift, y, Some(chip.percent), chip.charging, 0.72, chip.source, &chip.name);
+                    }
+                    if let Some((percent,tip))=clash {
+                        let y=y+step*(powers.len() as f32+0.5);
+                        paint::used_ring(c, cx, y, percent, 0.72, &tip);
                     }
                 },
                 SideItem::Music => paint::playback_bars(c, cx, mid, self.t, self.media.playing, theme::WHITE),

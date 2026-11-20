@@ -96,6 +96,7 @@ struct Shell {
     quota: daozai::quota::Service,
     quota_sig: Option<(bool,Vec<daozai::quota::Account>)>,
     quota_at: PollClock,
+    clash_at: PollClock,
 }
 
 const MODULE_OFF:&str="该功能已在「页面管理」中关闭";
@@ -238,7 +239,7 @@ impl Shell {
             cal: None,
             cal_sig: None,
             clipboard_watch: None,
-            quota: daozai::quota::Service::start(), quota_sig: None, quota_at: PollClock::default(),
+            quota: daozai::quota::Service::start(), quota_sig: None, quota_at: PollClock::default(), clash_at: PollClock::default(),
         }
     }
 
@@ -518,7 +519,7 @@ impl eframe::App for Shell {
             } else {
                 self.backdrop=None;
             }
-            if self.app.settings.bluetooth_notifications {
+            if self.app.settings.bluetooth_notifications || self.app.settings.show_battery {
                 if self.bt_rx.is_none() {self.bt_rx=Some(daozai::bt::spawn());}
             } else {
                 self.bt_rx=None;
@@ -527,6 +528,10 @@ impl eframe::App for Shell {
             }
             if let Some(service)=&self.bt_rx {
                 while let Ok(found)=service.rx.try_recv(){ self.bt=found; self.bt_ready=true; }
+            }
+            if self.clash_at.ready(Duration::from_secs(30)) {
+                self.app.clash = daozai::clash_usage::load();
+                self.clash_at = PollClock::now();
             }
             let previous_pending=self.app.pending_messengers.clone();
             for event in self.messengers.poll_taskbar(ctx,&self.app.settings){match event{

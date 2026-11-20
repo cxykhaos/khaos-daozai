@@ -18,6 +18,7 @@ pub mod messenger;
 pub mod child_process;
 mod settings_window;
 pub mod bt;
+pub mod clash_usage;
 #[cfg(windows)]
 pub mod mouse_power;
 pub mod calendar;

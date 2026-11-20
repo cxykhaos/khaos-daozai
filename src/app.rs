@@ -902,6 +902,9 @@ pub struct App {
     pub(crate) resident_powers: Vec<crate::paint::PowerChip>,
     /// 设置里可选的全部电量，包含用户暂时关掉的来源。
     pub(crate) power_offers: Vec<crate::paint::PowerChip>,
+    /// 已连接但还没报出电量的设备，设置里仍然可以先勾选。
+    pub(crate) power_waiting: Vec<(String, String)>,
+    pub clash: Option<crate::clash_usage::Usage>,
 }
 
 impl App {
@@ -1033,7 +1036,7 @@ impl App {
             weather,
             weather_source,
             updates: crate::updates::State::load(model::config_dir().join("update-check.json")),
-            resident: Default::default(), resident_power:(None,false), resident_source: crate::paint::PowerSource::System, resident_powers: Vec::new(), power_offers: Vec::new(),
+            resident: Default::default(), resident_power:(None,false), resident_source: crate::paint::PowerSource::System, resident_powers: Vec::new(), power_offers: Vec::new(), power_waiting: Vec::new(), clash: None,
         }
     }
 
@@ -1879,15 +1882,17 @@ impl App {
         self.update_media(env,&ctx);
         let bell=self.t<self.notification_bell_until&&!self.compact_notices();
         self.power_offers=if env.powers.is_empty(){self.shown_powers(env)}else{env.powers.clone()};
+        self.power_waiting=env.bt.iter().filter(|device| !self.power_offers.iter().any(|chip| chip.id==format!("bt:{}", device.id))).map(|device| (format!("bt:{}", device.id), device.name.clone())).collect();
         self.resident_powers=self.shown_powers(env);
         self.resident_power=self.resident_powers.first().map(|chip|(Some(chip.percent),chip.charging)).unwrap_or((env.battery,env.charging));
         self.resident_source=self.resident_powers.first().map(|chip|chip.source).unwrap_or(env.power_source);
-        let show_power=!self.resident_powers.is_empty();
+        let show_power=!self.resident_powers.is_empty() || self.visible_clash().is_some();
         let mut layout=Layout::new(show_power,self.quota_bar_indices().len(),self.media.is_shown()&&!bell,self.pomo.running,bell,self.pet_enabled(),self.weather_pill().is_some());
         layout.reorder(&self.settings.resident_order);
         for (position,extra) in self.quota_balance_layout(&ctx){layout.balance_tail(position,extra);}
         let power_extra=paint::power_extra(&self.resident_powers);
         if power_extra>0.0 { layout.widen(bar::BATTERY,power_extra); }
+        if self.visible_clash().is_some() && !self.resident_powers.is_empty() { layout.widen(bar::BATTERY,28.0); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(&ctx){ layout.widen(bar::WEATHER,extra); }
@@ -2919,20 +2924,24 @@ impl App {
         let m = anim::ease_in_out(smoothstep(0.0, 0.85, p));
         let clock = self.settings.clock_text(&env.clock);
         let powers=&self.resident_powers;
+        let clash_percent=self.visible_clash().map(|usage|usage.used_percent());
+        let clash_tip=self.visible_clash().map(|usage|usage.summary());
         let show_battery=!powers.is_empty();
-        let single=powers.len()<=1;
+        let show_status=show_battery || clash_tip.is_some();
+        let single=powers.len()<=1 && clash_tip.is_none();
         let icon=single && powers.first().is_some_and(|chip|chip.source.has_icon());
         let power_extra=paint::power_extra(powers);
+        let clash_span=if clash_tip.is_some() && show_battery {28.0}else{0.0};
 
         // 顶栏终点布局：[电池][日期][时钟] 作为一组整体居中
         let date_w = base.text_w(&env.date, size::DATE, W::Regular);
         let clock_w = paint::clock_width(base,&clock,size::CLOCK);
-        let battery_space=if show_battery {if single {if icon {24.0+paint::MOUSE_SLOT}else{24.0}}else{24.0+power_extra}}else{0.0};
+        let battery_space=if show_status {if single {if icon {24.0+paint::MOUSE_SLOT}else{24.0}}else{24.0+power_extra+clash_span}}else{0.0};
         let group = battery_space + date_w + 8.0 + clock_w;
         let gx = local_cx - group / 2.0 + if show_battery {6.0}else{0.0};
         // 日程页左侧还有新增按钮，顶栏从操作区右侧开始，避免较长的日期和时段文字挤到按钮上。
         let gx = if self.page==CALENDAR_PAGE {gx.max(155.0)}else{gx};
-        let hb = (gx + if !show_battery {0.0} else if single {if icon {8.5+paint::MOUSE_SLOT}else{8.5}} else {battery_space/2.0}, 18.6);
+        let hb = (gx + if !show_status {0.0} else if single {if icon {8.5+paint::MOUSE_SLOT}else{8.5}} else {battery_space/2.0}, 18.6);
         let hd = gx + battery_space;
         let hc = hd + date_w + 8.0;
         // 药丸起点布局
@@ -2945,13 +2954,16 @@ impl App {
         // 电池：位置/大小连续插值
         let bk = lerp(1.0, 0.8, m);
         let bpos = (lerp(pb.0, hb.0, m), lerp(pb.1, hb.1, m));
-        if show_battery {
+        if show_status {
             let card=&base.faded(lerp(layout.clearance(bar::BATTERY),1.0,m));
             if single {
-                let chip=&powers[0];
-                paint::battery(card, bpos.0, bpos.1, Some(chip.percent), chip.charging, bk, chip.source, &chip.name);
+                if let Some(chip)=powers.first() {
+                    paint::battery(card, bpos.0, bpos.1, Some(chip.percent), chip.charging, bk, chip.source, &chip.name);
+                } else if let (Some(percent), Some(tip))=(clash_percent, clash_tip.as_deref()) {
+                    paint::used_ring(card, bpos.0, bpos.1, percent, bk, tip);
+                }
             } else {
-                let span=20.0+power_extra;
+                let span=20.0+power_extra+clash_span;
                 let mut x=bpos.0-span/2.0;
                 for (index,chip) in powers.iter().enumerate() {
                     if index>0 { x+=6.0; }
@@ -2959,6 +2971,10 @@ impl App {
                     let ring=x+if chip.source.has_icon() {w-10.0} else {w/2.0};
                     paint::battery(card, ring, bpos.1, Some(chip.percent), chip.charging, bk, chip.source, &chip.name);
                     x+=w;
+                }
+                if let (Some(percent), Some(tip))=(clash_percent, clash_tip.as_deref()) {
+                    if show_battery { x+=6.0; }
+                    paint::used_ring(card, x+11.0, bpos.1, percent, bk, tip);
                 }
             }
         }
@@ -3326,6 +3342,10 @@ impl App {
                 self.confirm_clear = None;
             }
         }
+    }
+
+    pub(crate) fn visible_clash(&self) -> Option<&crate::clash_usage::Usage> {
+        self.settings.show_clash.then_some(self.clash.as_ref()).flatten()
     }
 
     pub(crate) fn shown_powers(&self, env: &Env) -> Vec<crate::paint::PowerChip> {
