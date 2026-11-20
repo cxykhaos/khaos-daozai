@@ -91,6 +91,14 @@ impl NowPlaying {
     }
 
     pub fn is_music(&self)->bool {self.kind()==MediaKind::Music}
+    /// 岛上要展示的正在播放内容：歌曲、视频，以及浏览器里正在播放、但类型没标清的媒体。
+    pub fn is_shown(&self)->bool {
+        if self.title.trim().is_empty() { return false; }
+        match self.kind() {
+            MediaKind::Music | MediaKind::Video => true,
+            MediaKind::Unknown => self.playing && ["chrome","msedge","firefox","brave","opera"].iter().any(|name| self.source.to_lowercase().contains(name)),
+        }
+    }
 }
 
 type ArtworkRequest=(String,Box<dyn FnOnce()->Option<Vec<u8>>+Send>);
@@ -277,14 +285,22 @@ fn choose_media(system:Option<NowPlaying>,native:Option<NowPlaying>)->Option<Now
             return Some(media);
         }
     }
-    if system.as_ref().is_some_and(|m|m.playing && m.is_music()){system}
-    else if native.as_ref().is_some_and(|m|m.playing && m.is_music()){native}
-    else if system.as_ref().is_some_and(NowPlaying::is_music){system}
-    else{native.or(system)}
+    match (system, native) {
+        (Some(system), Some(native)) => Some(if media_rank(&system) <= media_rank(&native) { system } else { native }),
+        (Some(system), None) => Some(system),
+        (None, Some(native)) => Some(native),
+        (None, None) => None,
+    }.filter(NowPlaying::is_shown)
 }
 
 fn media_rank(media:&NowPlaying)->u8{
-    match (media.is_music(),media.playing){(true,true)=>0,(true,false)=>1,(false,true)=>2,_=>3}
+    match (media.playing && media.is_shown(), media.is_music()) {
+        (true, true) => 0,
+        (true, false) => 1,
+        (false, true) => 2,
+        (false, false) if media.is_shown() => 3,
+        _ => 4,
+    }
 }
 
 fn choose_media_for_source(system:Option<NowPlaying>,native:Option<NowPlaying>,previous:&str,native_pending:bool)->Option<NowPlaying>{
@@ -732,7 +748,6 @@ fn other_clients_repeated_samples_keep_the_clock_running() {
 struct MediaMemory {last:Option<(NowPlaying,std::time::Instant)>}
 impl MediaMemory {
     fn update(&mut self,media:&mut NowPlaying,now:std::time::Instant){
-        if media.playback_type==MediaKind::Video{self.last=None;return;}
         if media.title.trim().is_empty(){
             // 会话重建时可短暂返回空值；保留窗口不刷新期限，真正退出最多延迟两秒收起。
             if let Some((old,at))=&self.last {
@@ -1193,7 +1208,7 @@ mod tests {
         for sessions in [vec![video.clone(),paused.clone(),music.clone()],vec![paused.clone(),music.clone(),video.clone()]] {
             let selected=sessions.iter().min_by_key(|m|media_rank(m)).unwrap();assert!(selected.is_music() && selected.playing);
         }
-        assert!(choose_media(Some(video),Some(paused)).unwrap().is_music());
+        assert_eq!(choose_media(Some(video.clone()),Some(paused)).unwrap().title, video.title, "正在播放的视频优先于暂停的音乐");
     }
 
     #[test]

@@ -441,6 +441,7 @@ fn main() {
             battery: Some(76),
             charging: true,
             power_source: Default::default(),
+            powers: Vec::new(),
             network: None,
             cursor: Some(cursor),
             idle_seconds:None,

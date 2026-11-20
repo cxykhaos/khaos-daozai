@@ -21,14 +21,14 @@ pub const SIDE_HALF_EXTENT: f32 = 150.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum SideItem {
-    Clock, Weather, Battery, Music, Focus, Bell,
+    Clock, Weather, Battery(u8), Music, Focus, Bell,
     /// AI 额度：账号下标（None 为「+N」）与高度。
     Quota(usize, f32),
 }
 
 impl SideItem {
     fn height(self, clock_seconds: bool) -> f32 {
-        match self { Self::Clock => if clock_seconds {46.0}else{32.0}, Self::Weather => 40.0, Self::Battery => 20.0, Self::Music => 18.0, Self::Focus => 22.0, Self::Bell => 22.0, Self::Quota(_, h) => h }
+        match self { Self::Clock => if clock_seconds {46.0}else{32.0}, Self::Weather => 40.0, Self::Battery(n) => 20.0 * n.max(1) as f32, Self::Music => 18.0, Self::Focus => 22.0, Self::Bell => 22.0, Self::Quota(_, h) => h }
     }
 }
 
@@ -41,8 +41,8 @@ impl App {
         let mut items = Vec::new();
         if self.settings.show_clock {items.push(SideItem::Clock);}
         if self.weather_pill().is_some() {items.push(SideItem::Weather);}
-        if self.settings.show_battery && self.resident_power.0.is_some() { items.push(SideItem::Battery); }
-        if self.media.is_music() { items.push(SideItem::Music); }
+        if self.settings.show_battery && self.resident_power.0.is_some() { items.push(SideItem::Battery(self.resident_powers.len().max(1) as u8)); }
+        if self.media.is_shown() { items.push(SideItem::Music); }
         if self.pomo.running { items.push(SideItem::Focus); }
         items.extend(self.quota_side_items().into_iter().map(|(index, h)| SideItem::Quota(index, h)));
         if self.t < self.notification_bell_until { items.push(SideItem::Bell); }
@@ -133,7 +133,16 @@ impl App {
                     if self.settings.clock_seconds {c.text(cx,top+28.0,text.rsplit(':').next().unwrap_or("--"),12.0,W::Bold,theme::GRAY,H::Center);}
                 }
                 SideItem::Weather => self.draw_side_weather(c,cx,mid),
-                SideItem::Battery => paint::battery(c, cx+if env.power_source==crate::paint::PowerSource::Mouse {paint::MOUSE_SHIFT*0.72}else{0.0}, mid, env.battery, env.charging, 0.72, env.power_source),
+                SideItem::Battery(_) => {
+                    let powers=self.shown_powers(env);
+                    let count=powers.len().max(1) as f32;
+                    let step=h/count;
+                    for (index,chip) in powers.iter().enumerate() {
+                        let y=y+step*(index as f32+0.5);
+                        let shift=if chip.source.has_icon(){paint::MOUSE_SHIFT*0.72}else{0.0};
+                        paint::battery(c, cx+shift, y, Some(chip.percent), chip.charging, 0.72, chip.source, &chip.name);
+                    }
+                },
                 SideItem::Music => paint::playback_bars(c, cx, mid, self.t, self.media.playing, theme::WHITE),
                 SideItem::Focus => {
                     let minutes = (self.pomo.remaining / 60.0).ceil().max(0.0) as u32;

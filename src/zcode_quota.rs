@@ -49,7 +49,7 @@ fn value(root:&Value,name:&str,path:&Path)->Result<String,String>{
         let secret=std::env::var("ZCODE_CREDENTIAL_SECRET").ok().filter(|s|!s.trim().is_empty()).unwrap_or_else(||format!(
             "zcode-credential-fallback:win32:{}:{}",std::env::var("USERPROFILE").unwrap_or_default(),std::env::var("USERNAME").unwrap_or_default()));
         (encoded,digest::digest(&digest::SHA256,secret.trim().as_bytes()).as_ref().to_vec())
-    }else if raw.starts_with("enc:"){return Err("ZCode 登录凭据格式不受支持，请更新岛仔".into());}else{return Ok(raw.into());};
+    }else if raw.starts_with("enc:"){return Err("ZCode 登录凭据格式不受支持，请更新后再试".into());}else{return Ok(raw.into());};
     let parts=encoded.split('.').map(|s|URL_SAFE_NO_PAD.decode(s)).collect::<Result<Vec<_>,_>>().map_err(|_|error)?;
     let [iv,tag,cipher]=parts.as_slice() else{return Err(error.into());};
     if tag.len()!=16{return Err(error.into());}

@@ -171,6 +171,37 @@ pub fn watch(_shared: Shared, _repaint: impl Fn() + Send + 'static) -> Option<Wa
 #[cfg(windows)]
 const HISTORY_COPY_FORMAT: &str = "Daozai.ClipboardHistoryCopy";
 
+/// 把文件放进系统剪贴板（CF_HDROP），资源管理器里可以直接粘贴。
+pub fn copy_file(path: &std::path::Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Foundation::{HANDLE, HWND};
+        use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+        use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0, 0]).collect();
+        let bytes = 20 + wide.len() * 2;
+        unsafe {
+            if OpenClipboard(HWND::default()).is_err() { return false; }
+            let _ = EmptyClipboard();
+            let Ok(memory) = GlobalAlloc(GMEM_MOVEABLE, bytes) else { let _ = CloseClipboard(); return false; };
+            let ptr = GlobalLock(memory);
+            if ptr.is_null() { let _ = CloseClipboard(); return false; }
+            let header = ptr as *mut u8;
+            std::ptr::write_bytes(header, 0, 20);
+            header.cast::<u32>().write(20);
+            header.add(16).cast::<u32>().write(1);
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), header.add(20).cast(), wide.len());
+            let _ = GlobalUnlock(memory);
+            let ok = SetClipboardData(15, HANDLE(memory.0 as _)).is_ok();
+            let _ = CloseClipboard();
+            ok
+        }
+    }
+    #[cfg(not(windows))]
+    { let _ = path; false }
+}
+
 #[cfg(windows)]
 pub fn copy_history(text: &str) -> bool {
     use clipboard_win::{Clipboard, raw, register_format};

@@ -116,7 +116,7 @@ impl Provider {
             Provider::Custom => [
                 "服务器填日历服务的 CalDAV 地址，例如 https://example.com/remote.php/dav",
                 "用户名和密码用该服务的账号；支持「应用密码」的建议单独生成一个",
-                "只读同步；岛仔会自动发现账号下所有日历",
+                "只读同步；会自动发现账号下所有日历",
             ],
             Provider::Exchange => [
                 "服务器填 Exchange 邮件服务器地址，例如 mail.example.com，可向公司 IT 获取",
@@ -540,7 +540,7 @@ fn agent() -> Result<ureq::Agent, Failure> {
     // 仅日历使用系统证书验证，继承用户已信任的自签证书和私有 CA。
     #[cfg(windows)]
     let builder = builder.tls_connector(std::sync::Arc::new(native_tls::TlsConnector::new()
-        .map_err(|_| Failure::text("无法初始化日历安全连接，请重启岛仔后重试"))?));
+        .map_err(|_| Failure::text("无法初始化日历安全连接，请重启后再试"))?));
     Ok(builder.build())
 }
 

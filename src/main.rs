@@ -275,10 +275,11 @@ impl Shell {
         }
     }
 
-    /// 笔记本显示整机电量。没有整机电池时，电量环改显示无线鼠标。
+    /// 整机、鼠标和已上报电量的蓝牙设备都放进目录，设置里决定显示哪些。
     #[cfg(windows)]
-    fn displayed_power(&mut self) -> (Option<u8>, bool, daozai::paint::PowerSource) {
-        if self.app.settings.show_battery && self.sys.0.is_none() {
+    fn power_catalog(&mut self) -> Vec<daozai::paint::PowerChip> {
+        use daozai::paint::{PowerChip, PowerSource};
+        if self.app.settings.show_battery {
             if self.mouse_power.is_none() { self.mouse_power = Some(daozai::mouse_power::spawn()); }
         } else if self.mouse_power.is_some() {
             self.mouse_power = None;
@@ -287,13 +288,28 @@ impl Shell {
         if let Some(service) = &self.mouse_power {
             while let Ok(level) = service.rx.try_recv() { self.mouse_level = level; }
         }
+        let mut chips = Vec::new();
         if let Some(percent) = self.sys.0 {
-            (Some(percent), self.sys.1, daozai::paint::PowerSource::System)
-        } else if let Some(level) = self.mouse_level {
-            (Some(level.percent), level.charging, daozai::paint::PowerSource::Mouse)
-        } else {
-            (None, false, daozai::paint::PowerSource::System)
+            chips.push(PowerChip { id: "system".into(), name: "本机".into(), percent, charging: self.sys.1, source: PowerSource::System });
         }
+        if let Some(level) = self.mouse_level {
+            chips.push(PowerChip { id: "mouse".into(), name: "鼠标".into(), percent: level.percent, charging: level.charging, source: PowerSource::Mouse });
+        }
+        for device in &self.bt {
+            let Some(percent) = device.battery else { continue };
+            if device.kind == daozai::bt::DeviceKind::Mouse && self.mouse_level.is_some() { continue; }
+            let source = match device.kind {
+                daozai::bt::DeviceKind::Mouse => PowerSource::Mouse,
+                daozai::bt::DeviceKind::Bone | daozai::bt::DeviceKind::Earbuds | daozai::bt::DeviceKind::Headphones => PowerSource::Headphones,
+                daozai::bt::DeviceKind::Keyboard => PowerSource::Keyboard,
+                daozai::bt::DeviceKind::Speaker => PowerSource::Speaker,
+                daozai::bt::DeviceKind::Phone => PowerSource::Phone,
+                daozai::bt::DeviceKind::Gamepad => PowerSource::Gamepad,
+                daozai::bt::DeviceKind::Other => PowerSource::Other,
+            };
+            chips.push(PowerChip { id: format!("bt:{}", device.id), name: device.name.clone(), percent, charging: false, source });
+        }
+        chips
     }
 
     fn env(&mut self, ctx: &egui::Context) -> Env {
@@ -314,9 +330,13 @@ impl Shell {
             self.sys = (b, c, PollClock::now());
         }
         #[cfg(windows)]
-        let (battery, charging, power_source) = self.displayed_power();
+        let powers = self.power_catalog();
         #[cfg(not(windows))]
-        let (battery, charging, power_source) = (self.sys.0, self.sys.1, daozai::paint::PowerSource::System);
+        let powers: Vec<daozai::paint::PowerChip> = Vec::new();
+        let shown: Vec<_> = powers.iter().filter(|chip| !self.app.settings.battery_hidden.iter().any(|id| id == &chip.id)).collect();
+        let battery = shown.first().map(|chip| chip.percent).or(if powers.is_empty() { self.sys.0 } else { None });
+        let charging = shown.first().map(|chip| chip.charging).unwrap_or(false);
+        let power_source = shown.first().map(|chip| chip.source).unwrap_or(daozai::paint::PowerSource::System);
         let ppp = ctx.pixels_per_point();
         let origin = ctx.input(|i| i.viewport().outer_rect).map(|r| r.min).unwrap_or(Pos2::new(self.win_x, 0.0));
         #[cfg(windows)]
@@ -345,6 +365,7 @@ impl Shell {
             battery,
             charging,
             power_source,
+            powers,
             network: Some(self.system_state.network),
             cursor,
             idle_seconds: {
@@ -803,6 +824,7 @@ impl eframe::App for Shell {
                     self.volume_quiet=PollClock::now();
                 },
                 Cmd::Copy(text)=>{ctx.copy_text(text);self.app.say("已复制");},
+                Cmd::CopyFile(path)=>{self.app.say(if daozai::clipboard::copy_file(&path){"已复制文件，可以粘贴"}else{"复制文件失败，请重试"});},
                 Cmd::Notify(title,body,sound)=>{
                     #[cfg(windows)] {
                         if sound==app::NotificationSound::Health {daozai::tray::play_health_sound();}

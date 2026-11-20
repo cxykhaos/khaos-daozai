@@ -61,13 +61,14 @@ impl App {
         }
 
         if !has {
-            c.text(121.0,47.0,"暂无音乐",14.0,W::Bold,theme::WHITE,H::Left);
+            c.text(121.0,47.0,"暂无播放",14.0,W::Bold,theme::WHITE,H::Left);
         } else {
             let text_x=if with_lyrics {99.0}else{121.0};
             let text_width=if with_lyrics {123.0}else{220.0};
             let title_size=if with_lyrics {12.0}else{14.0};
+            let subtitle=if np.artist.trim().is_empty(){np.source.clone()}else{np.artist.clone()};
             c.text(text_x,if with_lyrics {41.0}else{53.0},&c.fit(&np.title,title_size,W::Bold,text_width),title_size,W::Bold,theme::WHITE,H::Left);
-            c.text(text_x,if with_lyrics {57.0}else{67.0},&c.fit(&np.artist,size::BODY,W::Regular,text_width),size::BODY,W::Regular,theme::GRAY,H::Left);
+            c.text(text_x,if with_lyrics {57.0}else{67.0},&c.fit(&subtitle,size::BODY,W::Regular,text_width),size::BODY,W::Regular,theme::GRAY,H::Left);
             if with_lyrics {self.draw_music_lyrics(c);}
         }
 
@@ -703,7 +704,7 @@ impl App {
                 ec.dashed(42.0, 32.0, 335.0, 91.0, 12.0, 1.2, Color32::from_gray(70), 0.0);
                 paint::tray(&ec, 209.5, 60.0, 28.0, 0.0, Color32::from_gray(200), Color32::from_gray(80));
                 ec.text(209.5, 93.0, "把文件拖到这儿", 12.0, W::Semibold, theme::WHITE, H::Center);
-                ec.text(209.5, 108.0, "只记位置，不复制文件 · 点一下打开", size::TINY, W::Regular, theme::GRAY, H::Center);
+                ec.text(209.5, 108.0, "点一下打开 · 右键可以复制文件", size::TINY, W::Regular, theme::GRAY, H::Center);
             }
         } else {
             self.shelf_row(&body, cmds);
@@ -768,6 +769,7 @@ impl App {
             if show_hint {remove.on_hover_text("从置物架移除，保留原文件");}
             r.context_menu(|ui|{
                 if ui.button("打开").clicked(){if p.exists(){cmds.push(Cmd::Open(p.clone()));}ui.close_menu();}
+                if ui.button("复制文件").clicked(){cmds.push(Cmd::CopyFile(p.clone()));ui.close_menu();}
                 if ui.button("在文件夹中显示").clicked(){cmds.push(Cmd::Reveal(p.clone()));ui.close_menu();}
                 if ui.button("复制完整路径").clicked(){cmds.push(Cmd::Copy(p.display().to_string()));ui.close_menu();}
                 if ui.button("从置物架移除").clicked(){delete=true;ui.close_menu();}
@@ -1127,7 +1129,7 @@ impl App {
             c.text(307.0,46.0,if self.settings.mail_sync_operations{"同步"}else{"仅本机"},8.0,W::Regular,theme::DIM,H::Center);
             let ready=self.mail.manage.pending.is_empty()&&self.mail.accounts.iter().any(|a|a.enabled&&self.mail.manage.data.contains_key(&(crate::mail::key(a),Folder::Inbox))&&self.mail.manage.identities.get(&crate::mail::key(a))==Some(a));
             c.text(375.0,47.0,"全部已读",10.0,W::Regular,if ready{theme::BLUE}else{theme::DIM},H::Right);
-            if c.hit(325.0,33.0,53.0,19.0,"mail-read-all").on_hover_text(if self.settings.mail_sync_operations{"将已连接邮箱的未读邮件全部标为已读"}else{"仅将岛仔当前加载的邮件标为已读，不更改邮箱"}).clicked()&&ready{
+            if c.hit(325.0,33.0,53.0,19.0,"mail-read-all").on_hover_text(if self.settings.mail_sync_operations{"将已连接邮箱的未读邮件全部标为已读"}else{"仅将当前已加载的邮件标为已读，不更改邮箱"}).clicked()&&ready{
                 self.mail_manage_request(None,Folder::Inbox,Action::ReadAll);
             }
         }

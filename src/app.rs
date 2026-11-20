@@ -124,6 +124,8 @@ pub struct Env {
     pub charging: bool,
     /// 电量环对应的设备。没有整机电池时为鼠标。
     pub power_source: crate::paint::PowerSource,
+    /// 当前能读到的全部电量。空列表时仍用上面的单块电量，测试和旧路径不变。
+    pub powers: Vec<crate::paint::PowerChip>,
     /// 互联网连接状态；未知时不触发表情提醒。
     pub network: Option<bool>,
     /// 光标位置（与 `frame` 传入的 `win` 同一坐标系）；不在窗口附近时为 None。
@@ -184,6 +186,8 @@ pub enum Cmd {
     Focus,
     Reveal(PathBuf),
     Copy(String),
+    /// 把文件放进系统剪贴板，可以在资源管理器里粘贴。
+    CopyFile(PathBuf),
     Notify(String, String, NotificationSound),
     RequestNotifications,
     RequestQqNotifications,
@@ -895,6 +899,9 @@ pub struct App {
     pub(crate) resident: bar::Motion,
     pub(crate) resident_power: (Option<u8>,bool),
     pub(crate) resident_source: crate::paint::PowerSource,
+    pub(crate) resident_powers: Vec<crate::paint::PowerChip>,
+    /// 设置里可选的全部电量，包含用户暂时关掉的来源。
+    pub(crate) power_offers: Vec<crate::paint::PowerChip>,
 }
 
 impl App {
@@ -1026,7 +1033,7 @@ impl App {
             weather,
             weather_source,
             updates: crate::updates::State::load(model::config_dir().join("update-check.json")),
-            resident: Default::default(), resident_power:(None,false), resident_source: crate::paint::PowerSource::System,
+            resident: Default::default(), resident_power:(None,false), resident_source: crate::paint::PowerSource::System, resident_powers: Vec::new(), power_offers: Vec::new(),
         }
     }
 
@@ -1871,12 +1878,16 @@ impl App {
         if self.compact_notices(){self.notice_width.step(dt);}else{self.notice_width.snap(0.0);self.notice_details=false;}
         self.update_media(env,&ctx);
         let bell=self.t<self.notification_bell_until&&!self.compact_notices();
-        self.resident_power=(env.battery,env.charging);
-        self.resident_source=env.power_source;
-        let mut layout=Layout::new(self.settings.show_battery&&env.battery.is_some(),self.quota_bar_indices().len(),self.media.is_music()&&!bell,self.pomo.running,bell,self.pet_enabled(),self.weather_pill().is_some());
+        self.power_offers=if env.powers.is_empty(){self.shown_powers(env)}else{env.powers.clone()};
+        self.resident_powers=self.shown_powers(env);
+        self.resident_power=self.resident_powers.first().map(|chip|(Some(chip.percent),chip.charging)).unwrap_or((env.battery,env.charging));
+        self.resident_source=self.resident_powers.first().map(|chip|chip.source).unwrap_or(env.power_source);
+        let show_power=!self.resident_powers.is_empty();
+        let mut layout=Layout::new(show_power,self.quota_bar_indices().len(),self.media.is_shown()&&!bell,self.pomo.running,bell,self.pet_enabled(),self.weather_pill().is_some());
         layout.reorder(&self.settings.resident_order);
         for (position,extra) in self.quota_balance_layout(&ctx){layout.balance_tail(position,extra);}
-        if env.power_source==crate::paint::PowerSource::Mouse { layout.widen(bar::BATTERY,paint::MOUSE_SLOT); }
+        let power_extra=paint::power_extra(&self.resident_powers);
+        if power_extra>0.0 { layout.widen(bar::BATTERY,power_extra); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(&ctx){ layout.widen(bar::WEATHER,extra); }
@@ -2246,7 +2257,7 @@ impl App {
             || !self.notice_width.settled(1.0);
         let pet_visible=self.pet_a>0.01 && !self.open && !minimal_pill;
         let ambient=self.settings.skin==model::Skin::Fluid && self.fluid.animating() || self.pomo.running && (self.open && self.page==1 || !self.open && !minimal_pill && self.notice.is_none() && bar::animations_enabled())
-            || self.media.playing && (self.open && self.page==0 || !self.open && !minimal_pill && self.notice.is_none() && self.media.is_music())
+            || self.media.playing && (self.open && self.page==0 || !self.open && !minimal_pill && self.notice.is_none() && self.media.is_shown())
             || self.notice.as_ref().is_some_and(|notice|notice.meeting.is_some());
         let animating=transitioning || ambient || pet_visible && self.pet.state!=PetState::Sleeping;
         // 交互形变保持 60 帧，媒体 30 帧；小表情 20 帧，睡眠 10 帧，静态界面每秒核对提醒。
@@ -2907,31 +2918,50 @@ impl App {
         let base=&header;
         let m = anim::ease_in_out(smoothstep(0.0, 0.85, p));
         let clock = self.settings.clock_text(&env.clock);
-        let show_battery=self.settings.show_battery && env.battery.is_some();
+        let powers=&self.resident_powers;
+        let show_battery=!powers.is_empty();
+        let single=powers.len()<=1;
+        let icon=single && powers.first().is_some_and(|chip|chip.source.has_icon());
+        let power_extra=paint::power_extra(powers);
 
         // 顶栏终点布局：[电池][日期][时钟] 作为一组整体居中
         let date_w = base.text_w(&env.date, size::DATE, W::Regular);
         let clock_w = paint::clock_width(base,&clock,size::CLOCK);
-        let mouse_battery=env.power_source==crate::paint::PowerSource::Mouse;
-        let battery_space=if show_battery {if mouse_battery {24.0+paint::MOUSE_SLOT}else{24.0}}else{0.0};
+        let battery_space=if show_battery {if single {if icon {24.0+paint::MOUSE_SLOT}else{24.0}}else{24.0+power_extra}}else{0.0};
         let group = battery_space + date_w + 8.0 + clock_w;
         let gx = local_cx - group / 2.0 + if show_battery {6.0}else{0.0};
         // 日程页左侧还有新增按钮，顶栏从操作区右侧开始，避免较长的日期和时段文字挤到按钮上。
         let gx = if self.page==CALENDAR_PAGE {gx.max(155.0)}else{gx};
-        let hb = (gx + if mouse_battery {8.5+paint::MOUSE_SLOT}else{8.5}, 18.6);
+        let hb = (gx + if !show_battery {0.0} else if single {if icon {8.5+paint::MOUSE_SLOT}else{8.5}} else {battery_space/2.0}, 18.6);
         let hd = gx + battery_space;
         let hc = hd + date_w + 8.0;
         // 药丸起点布局
-        let has_music=self.media.is_music();
+        let has_music=self.media.is_shown();
         let layout=self.resident.current();
-        let pb=(local_cx+layout.x[bar::BATTERY].unwrap_or(0.0)+if mouse_battery {paint::MOUSE_SHIFT}else{0.0},15.0);
+        let pb=(local_cx+layout.x[bar::BATTERY].unwrap_or(0.0)+if icon {paint::MOUSE_SHIFT}else{0.0},15.0);
         let pcx=layout.x[bar::CLOCK].map_or(hc,|x|local_cx+x-paint::clock_width(base,&clock,size::PILL_CLOCK)/2.0);
 
         if self.effective_minimal() && self.t>=self.notification_bell_until && p < 0.02 { return; }
         // 电池：位置/大小连续插值
         let bk = lerp(1.0, 0.8, m);
         let bpos = (lerp(pb.0, hb.0, m), lerp(pb.1, hb.1, m));
-        if show_battery {paint::battery(&base.faded(lerp(layout.clearance(bar::BATTERY),1.0,m)), bpos.0, bpos.1, env.battery, env.charging, bk, env.power_source);}
+        if show_battery {
+            let card=&base.faded(lerp(layout.clearance(bar::BATTERY),1.0,m));
+            if single {
+                let chip=&powers[0];
+                paint::battery(card, bpos.0, bpos.1, Some(chip.percent), chip.charging, bk, chip.source, &chip.name);
+            } else {
+                let span=20.0+power_extra;
+                let mut x=bpos.0-span/2.0;
+                for (index,chip) in powers.iter().enumerate() {
+                    if index>0 { x+=6.0; }
+                    let w=if chip.source.has_icon() {20.0+paint::MOUSE_SLOT} else {20.0};
+                    let ring=x+if chip.source.has_icon() {w-10.0} else {w/2.0};
+                    paint::battery(card, ring, bpos.1, Some(chip.percent), chip.charging, bk, chip.source, &chip.name);
+                    x+=w;
+                }
+            }
+        }
 
         // 时钟：两个字号沿同一路径交叉淡化，避免逐帧换字号
         let cpos = (lerp(pcx, hc, m), lerp(21.0, 23.0, m));
@@ -3298,10 +3328,26 @@ impl App {
         }
     }
 
+    pub(crate) fn shown_powers(&self, env: &Env) -> Vec<crate::paint::PowerChip> {
+        if !self.settings.show_battery { return Vec::new(); }
+        let catalog = if env.powers.is_empty() {
+            env.battery.map(|percent| crate::paint::PowerChip {
+                id: if env.power_source == crate::paint::PowerSource::Mouse { "mouse".into() } else { "system".into() },
+                name: env.power_source.label().into(),
+                percent,
+                charging: env.charging,
+                source: env.power_source,
+            }).into_iter().collect()
+        } else {
+            env.powers.clone()
+        };
+        catalog.into_iter().filter(|chip| !self.settings.battery_hidden.iter().any(|id| id == &chip.id)).collect()
+    }
+
     /// 媒体进度在两次 SMTC 刷新之间按时间外推，进度条才会连续走动。
     fn update_media(&mut self, env: &Env, ctx: &egui::Context) {
         let m = &env.media;
-        if !m.is_music() {
+        if !m.is_shown() {
             self.music_volume_ui=None;
             self.music_volume_quiet_until=0.0;
             self.music_volume_open=false;
@@ -3311,6 +3357,7 @@ impl App {
             self.ly=LyricsState::default();
             return;
         }
+        if !m.is_music() { self.ly=LyricsState::default(); }
         let a = &self.media_anchor;
         if a.0 != m.title || (a.1 - m.position).abs() > 0.01 || a.3 != m.playing {
             self.media_anchor = (m.title.clone(), m.position, env.t, m.playing);

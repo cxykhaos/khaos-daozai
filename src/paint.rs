@@ -411,12 +411,55 @@ pub fn chevron(c: &Card, x: f32, y: f32, dir: f32, hover: f32, press: f32) {
     c.path(&[(cx - dir * s * 0.75, y - s), (cx + dir * s * 0.45, y), (cx - dir * s * 0.75, y + s)], 1.6, Color32::WHITE);
 }
 
-/// 电量环对应的设备。整机电池用环本身表示，鼠标在环左侧放鼠标图标。
+/// 电量环对应的设备。整机电池用环本身表示，其他设备在环左侧放对应图标。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PowerSource {
     #[default]
     System,
     Mouse,
+    Headphones,
+    Keyboard,
+    Speaker,
+    Phone,
+    Gamepad,
+    Other,
+}
+
+impl PowerSource {
+    pub fn has_icon(self) -> bool { self != Self::System }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "本机",
+            Self::Mouse => "鼠标",
+            Self::Headphones => "耳机",
+            Self::Keyboard => "键盘",
+            Self::Speaker => "音箱",
+            Self::Phone => "手机",
+            Self::Gamepad => "手柄",
+            Self::Other => "设备",
+        }
+    }
+}
+
+/// 一块可显示的电量。`id` 用来在设置里记住开关。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PowerChip {
+    pub id: String,
+    pub name: String,
+    pub percent: u8,
+    pub charging: bool,
+    pub source: PowerSource,
+}
+
+/// 相对原来单环槽位多出来的宽度。一块本机电量不加宽。
+pub fn power_extra(chips: &[PowerChip]) -> f32 {
+    if chips.is_empty() { return 0.0; }
+    let mut span = 0.0;
+    for (index, chip) in chips.iter().enumerate() {
+        if index > 0 { span += 6.0; }
+        span += if chip.source.has_icon() { 20.0 + MOUSE_SLOT } else { 20.0 };
+    }
+    (span - 20.0).max(0.0)
 }
 
 /// 鼠标图标边长。环心要相对组件中心右移这么多，图标才落在加宽后的槽里。
@@ -427,7 +470,7 @@ pub const MOUSE_SLOT: f32 = 16.0;
 
 /// 电池环：充电绿色 + 闪电；低电量红色；否则灰色并显示百分比弧。
 /// `cx` 是环心。鼠标电量时环左侧是鼠标图标，百分比仍留在环里。
-pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f32, source: PowerSource) {
+pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f32, source: PowerSource, name: &str) {
     let r = 8.2 * k;
     let w = 2.6 * k;
     let level = pct.unwrap_or(100) as f32 / 100.0;
@@ -438,9 +481,9 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     } else {
         Color32::from_rgb(220, 220, 224)
     };
-    let icon = if source == PowerSource::Mouse { MOUSE_ICON * k } else { 0.0 };
+    let icon = if source.has_icon() { MOUSE_ICON * k } else { 0.0 };
     if icon > 0.0 {
-        mouse_icon(c, cx - r - 2.0 * k - icon, cy - icon / 2.0, icon, col);
+        device_icon(c, source, cx - r - 2.0 * k - icon, cy - icon / 2.0, icon, col);
     }
     c.ring(cx, cy, r, w, alpha(col, 0.22));
     let a0 = -FRAC_PI_2;
@@ -459,19 +502,28 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     if c.live {
         let left = cx - r - icon - if icon > 0.0 { 2.0 * k } else { 0.0 };
         let rect = c.rect(left, cy - r, cx + r - left, r * 2.0);
-        let name = if source == PowerSource::Mouse { "鼠标" } else { "本机" };
+        let name = if name.is_empty() { source.label() } else { name };
         let tip = match (pct, charging) {
             (Some(p), true) => format!("{name}电量 {p}% · 充电中"),
             (Some(p), false) => format!("{name}电量 {p}%"),
             (None, _) => format!("{name}电量"),
         };
-        c.ui.interact(rect, Id::new(("power-source", c.live, source as u8)), Sense::hover()).on_hover_text(tip);
+        c.ui.interact(rect, Id::new(("power-source", cx.to_bits(), cy.to_bits())), Sense::hover()).on_hover_text(tip);
     }
 }
 
-fn mouse_icon(c: &Card, x: f32, y: f32, size: f32, color: Color32) {
+fn device_icon(c: &Card, source: PowerSource, x: f32, y: f32, size: f32, color: Color32) {
     let rect = c.rect(x, y, size, size);
-    let icon = egui::include_image!("../assets/device-icons/mouse-bold.svg");
+    let icon = match source {
+        PowerSource::System => return,
+        PowerSource::Mouse => egui::include_image!("../assets/device-icons/mouse-bold.svg"),
+        PowerSource::Headphones => egui::include_image!("../assets/device-icons/headphones-round-bold.svg"),
+        PowerSource::Keyboard => egui::include_image!("../assets/device-icons/keyboard-bold.svg"),
+        PowerSource::Speaker => egui::include_image!("../assets/device-icons/speaker-bold.svg"),
+        PowerSource::Phone => egui::include_image!("../assets/device-icons/smartphone-bold.svg"),
+        PowerSource::Gamepad => egui::include_image!("../assets/device-icons/gamepad-bold.svg"),
+        PowerSource::Other => egui::include_image!("../assets/device-icons/bluetooth-linear.svg"),
+    };
     let egui::ImageSource::Bytes { uri, bytes } = icon else { return };
     let pixels = (rect.width() * c.ui.ctx().pixels_per_point()).ceil().max(1.0) as u32;
     let icon = egui::Image::from_bytes(format!("{uri}/{pixels}.svg"), bytes);

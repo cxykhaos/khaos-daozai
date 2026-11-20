@@ -14,7 +14,7 @@ QQ 992308975
 
 </div>
 
-khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，鼠标靠近就展开；切歌、看日程、复制验证码、记一条待办，都能顺手完成。小岛里的伙伴会眨眼、打盹、喝水，也会跟着音乐唱歌。
+khaos island 是一款 Windows 桌面小工具，基于 [xiaotang-daozai](https://github.com/Renly1994/xiaotang-daozai) 继续开发。平时收起在屏幕边缘，鼠标靠近就展开；切歌、看日程、复制验证码、记一条待办，都能顺手完成。小岛里的伙伴会眨眼、打盹、喝水，也会跟着音乐唱歌。
 
 你可以选刘海或胶囊，放在顶部、左侧或右侧，只保留自己需要的功能。程序使用 Rust 和 egui 构建，不依赖 Electron。
 
@@ -51,7 +51,8 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 
 播放、暂停、切歌、调节音量和拖动进度，都能在岛上操作。展开看歌词，也可以收起后只留一行歌词，让桌面继续做自己的事。
 
-- 通过 Windows 媒体会话读取播放信息，并针对网易云音乐、QQ 音乐、酷狗、汽水音乐补充兼容。
+- 通过 Windows 媒体会话读取正在播放的内容。歌曲会显示歌词；浏览器里正在播放的视频也会显示标题、来源和进度。
+- 针对网易云音乐、QQ 音乐、酷狗、汽水音乐补充了音乐兼容。
 - 网易云优先按歌曲 ID 找词，改善译名、合唱署名和 Live／Remix 等不同版本的匹配。
 
 播放器需提供可用的媒体信息；歌词取决于歌曲元数据与歌词来源，个别歌曲或播放器版本可能无法显示。
@@ -60,7 +61,7 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 
 ![日历与会议安排、每周重复待办、番茄专注与饮水提醒](docs/images/readme/daily.webp)
 
-| 想做的事 | 岛仔能帮你 |
+| 想做的事 | khaos island 能帮你 |
 | --- | --- |
 | 看今天的安排 | 月历与当日时间线，合并多个日历和正式邮件邀请，提前提醒会议 |
 | 记住每周的事 | 待办支持单次提醒、每周指定日期重复或每天重复；下一次到来时恢复为待办 |
@@ -75,7 +76,7 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 
 ![文件置物架与剪贴板历史：拖入文件、重新复制文字、固定常用内容](docs/images/readme/shelf.webp)
 
-**文件置物架**：拖入文件临时收集，点击打开、定位原文件，或拖出到其他应用。移除记录不会删除原文件。
+**文件置物架**：拖入文件临时收集，点击打开、定位原文件，右键复制文件后可以粘贴到其他位置，或拖出到其他应用。移除记录不会删除原文件。
 
 **文字剪贴板**：找回最近复制的 30 条文字，点一下重新复制，常用内容可以固定。历史保存在本机，重启后仍可查看；可在 **设置 → 待办与置物 → 剪贴板** 中关闭。密码管理器标记为敏感的内容不记录。
 
@@ -91,15 +92,16 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 
 ![AI 额度面板：Codex 额度、WorkBuddy 积分与 DeepSeek 余额](docs/images/readme/ai-quota.webp)
 
-支持 **Codex、Claude、Kimi、Grok Bot、Gemini、ZCode、WorkBuddy、DeepSeek 和 Kiro**。
+支持 **Codex、Claude、Kimi、Grok Bot、Gemini、ZCode、WorkBuddy、DeepSeek、Kiro 和本机 Cursor**。
 
 订阅额度、重置时间、套餐积分与 API 余额，按服务展示。多个账号可分别命名、选择配色，常用账号直接放在收起的小岛上。
 
 - **ZCode**：查看套餐额度。
-- **Claude**：只读取桌面版本地用量历史与缓存，或接收 Claude Code 官方状态栏输出；岛仔不使用 Claude 登录令牌，也不请求 Claude 额度接口。数据随官方客户端使用更新，桌面版缓存有效时自动显示重置时间，读取不到时显示未知。
+- **Claude**：只读取桌面版本地用量历史与缓存，或接收 Claude Code 官方状态栏输出；khaos island 不使用 Claude 登录令牌，也不请求 Claude 额度接口。数据随官方客户端使用更新，桌面版缓存有效时自动显示重置时间，读取不到时显示未知。
+- **Cursor**：读取本机 Cursor 登录，显示 Cursor 模型和套餐其他模型各自的剩余占比，每 3 分钟刷新一次。登录只在本机解密，并只发给 Cursor 的额度接口。
 - **Kiro**：只读识别 Kiro 登录缓存并核验用户，显示套餐、有效试用与赠送 / 加购点数及明细，超额上限单独显示；支持美国东部和欧洲中部区域。不自动续期，登录过期时请在 Kiro 中重新登录。
 - **WorkBuddy**：查看剩余积分；优先识别本机客户端登录，也可在默认浏览器完成授权。
-- **Gemini**：支持 Chrome 144+ 原生授权连接，读取官网的 5 小时与每周额度，无需扩展。先在 Chrome 登录 Gemini，首次在 `chrome://inspect/#remote-debugging` 开启连接，回岛仔点击连接并在 Chrome 允许授权；会话加密保存在本机，后续独立刷新。高级设置保留手动 Cookie 连接。
+- **Gemini**：支持 Chrome 144+ 原生授权连接，读取官网的 5 小时与每周额度，无需扩展。先在 Chrome 登录 Gemini，首次在 `chrome://inspect/#remote-debugging` 开启连接，回到 khaos island 点击连接并在 Chrome 允许授权；会话加密保存在本机，后续独立刷新。高级设置保留手动 Cookie 连接。
 - **DeepSeek**：使用 API Key 连接，查看账户余额、充值与赠送金额。
 - **中转站**：自动识别通用余额、New API 和 Sub2API，保留 One API 兼容计费接口；New API 可用用户 Token 查询账户余额。高级设置支持粘贴 CC Switch 的 `request` / `extractor` 自定义查询脚本，脚本与凭据加密保存在本机。
 
@@ -117,7 +119,7 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 
 ## 还有这些顺手的小功能
 
-电源与电量、网络变化、音量、大写锁定、输入语言、蓝牙设备状态，都能在小岛上提示。通知、蓝牙监听与不常用的功能页可以按需关闭。
+电源与电量、网络变化、音量、大写锁定、输入语言、蓝牙设备状态，都能在小岛上提示。本机电池、鼠标、耳机和其他上报了电量的蓝牙设备可以同时显示，并在设置里选择要留在岛上的来源。通知、蓝牙监听与不常用的功能页可以按需关闭。
 
 ## 下载安装
 
@@ -136,7 +138,7 @@ khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，�
 | --- | --- | --- |
 | 邮箱 | QQ、163、126、腾讯企业邮、iCloud、Gmail、自定义 IMAP | 启用 IMAP，填写授权码或 App 专用密码；自定义服务可填写服务器、端口与登录用户名 |
 | 日历 | 飞书、钉钉、企业微信、iCloud、CalDAV、Exchange ActiveSync | 服务商提供的日历同步凭据与必要的服务器地址；安装桌面客户端不等于授权 |
-| AI 额度 | Codex、Claude、Kimi、Grok Bot、Gemini、ZCode、WorkBuddy、DeepSeek、Kiro | 对应客户端登录、独立授权或 API Key；具体以设置中的连接入口为准 |
+| AI 额度 | Codex、Claude、Kimi、Grok Bot、Gemini、ZCode、WorkBuddy、DeepSeek、Kiro、Cursor | 对应客户端登录、独立授权或 API Key；Cursor 直接读取本机登录 |
 
 QQ 收信、邮件日程和飞书个人日历已进行真实账号测试。其他日历入口的可用性与服务端配置、权限和兼容性有关；钉钉、企业微信尚未完成本轮真实账号同步验收。
 
@@ -150,7 +152,7 @@ QQ 收信、邮件日程和飞书个人日历已进行真实账号测试。其�
 - 微信新消息提醒根据任务栏闪动工作，不读取联系人或聊天正文；QQ 与应用通知需要相应的系统通知权限。
 - 读取已有 AI 客户端登录时不回写原客户端配置。不要把授权码、Cookie、API Key 或登录 JSON 上传到 Issue。
 - 邮箱读取收件箱，不读取垃圾邮件文件夹；邮件正文在当前进程中用于展示和识别。
-- 岛仔没有自建的邮件或日程上传后台；开启联网功能后，会访问对应服务商与歌词服务。
+- khaos island 没有自建的邮件或日程上传后台；开启联网功能后，会访问对应服务商、歌词服务和已连接的额度接口。
 - 天气只用城市名或由定位服务给出的经纬度查询 Open-Meteo；自动定位通过 `ipwho.is` 获取大致城市，失败时尝试 FreeIPAPI，不读取账号信息。最近一次天气结果缓存在 `%APPDATA%\Daozai\weather-cities.json`；本机连接诊断只记录服务域名、请求阶段、路由、耗时及错误类别，不记录 IP、坐标或代理凭据，不会自动上传。
 
 完整说明见 [隐私与安全](docs/PRIVACY.md)。
@@ -183,7 +185,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1
 
 ## 开源与致谢
 
-岛仔原创代码采用 [MIT License](LICENSE)。Rust 依赖、vendored 代码、第三方图标及品牌标识沿用各自的许可或权利声明；MIT 不授予服务商标使用权，也不代表官方合作或认证。详见 [第三方声明](THIRD_PARTY_NOTICES.txt) 和 [依赖说明](docs/DEPENDENCIES.md)。
+本项目基于 [xiaotang-daozai](https://github.com/Renly1994/xiaotang-daozai)，代码采用 [MIT License](LICENSE)。Rust 依赖、vendored 代码、第三方图标及品牌标识沿用各自的许可或权利声明；MIT 不授予服务商标使用权，也不代表官方合作或认证。详见 [第三方声明](THIRD_PARTY_NOTICES.txt) 和 [依赖说明](docs/DEPENDENCIES.md)。
 
 「悬浮云」皮肤作者：啵（[@hanhb123](https://github.com/hanhb123)）。感谢 egui／eframe、Rust 社区，以及提供参考与素材的开源项目。
 

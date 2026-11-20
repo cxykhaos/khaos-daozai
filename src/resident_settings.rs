@@ -21,7 +21,8 @@ impl crate::app::App {
         let weather_snapshot=self.weather_pill().cloned();
         let mut layout=preview_layout(&order,count);
         for (position,extra) in self.quota_balance_layout(ui.ctx()){layout.balance_tail(position,extra);}
-        if self.resident_source==crate::paint::PowerSource::Mouse { layout.widen(BATTERY,crate::paint::MOUSE_SLOT); }
+        let power_extra=crate::paint::power_extra(&self.resident_powers);
+        if power_extra>0.0 { layout.widen(BATTERY,power_extra); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(ui.ctx()){layout.widen(WEATHER,extra);}
@@ -50,8 +51,7 @@ impl crate::app::App {
         let pointer=ui.ctx().pointer_interact_pos();
         let dragged=egui::DragAndDrop::payload::<usize>(ui.ctx());
         let mut movement=None;
-        let mouse=self.resident_source==crate::paint::PowerSource::Mouse;
-        let label=|slot|match slot{CLOCK=>"时间",BATTERY=>if mouse{"鼠标电量"}else{"电池电量"},WEATHER=>"天气",QUOTA=>"AI 额度",MUSIC=>"音乐",FOCUS=>"专注",_=>"吉祥物"};
+        let label=|slot|match slot{CLOCK=>"时间",BATTERY=>"电量",WEATHER=>"天气",QUOTA=>"AI 额度",MUSIC=>"音乐",FOCUS=>"专注",_=>"吉祥物"};
         for (index,&slot) in order.iter().enumerate(){
             let x=cx+layout.x[slot].unwrap();
             let width=match slot{CLOCK=>layout.widths[CLOCK],BATTERY=>layout.widths[BATTERY],WEATHER=>layout.widths[WEATHER],PET=>32.0,MUSIC=>14.0,FOCUS=>crate::focus_bar::WIDTH,_=>{
@@ -70,10 +70,29 @@ impl crate::app::App {
             let dx=if is_dragged{pointer.map(|p|((p.x-origin.x)/scale-(left+width/2.0)).clamp(-left,layout.width-left-width)).unwrap_or(0.0)}else{0.0};
             if is_dragged {ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
             else if response.hovered(){ui.painter().rect_filled(rect,6.0,Color32::from_white_alpha(18));}
-            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>self.settings.show_battery&&self.resident_power.0.is_some(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0,MUSIC=>self.media.is_music(),FOCUS=>self.pomo.running,_=>true};
+            let active=match slot{CLOCK=>self.settings.show_clock,BATTERY=>self.settings.show_battery&&self.resident_power.0.is_some(),WEATHER=>weather_snapshot.is_some(),PET=>self.settings.pet,QUOTA=>count>0,MUSIC=>self.media.is_shown(),FOCUS=>self.pomo.running,_=>true};
             let c=card.shifted(dx,0.0).faded(if active||is_dragged{1.0}else{0.38}).ghost();
             match slot{
-                BATTERY=>paint::battery(&c,x+if mouse {crate::paint::MOUSE_SHIFT}else{0.0},15.0,self.resident_power.0,self.resident_power.1,1.0,self.resident_source),
+                BATTERY=>{
+                    let powers=self.resident_powers.clone();
+                    if powers.len()<=1 {
+                        let source=powers.first().map(|chip|chip.source).unwrap_or(self.resident_source);
+                        let shift=if source.has_icon(){crate::paint::MOUSE_SHIFT}else{0.0};
+                        let (percent,charging)=powers.first().map(|chip|(Some(chip.percent),chip.charging)).unwrap_or(self.resident_power);
+                        let name=powers.first().map(|chip|chip.name.as_str()).unwrap_or("");
+                        paint::battery(&c,x+shift,15.0,percent,charging,1.0,source,name);
+                    } else {
+                        let span=20.0+crate::paint::power_extra(&powers);
+                        let mut px=x-span/2.0;
+                        for (index,chip) in powers.iter().enumerate() {
+                            if index>0 {px+=6.0;}
+                            let w=if chip.source.has_icon(){20.0+crate::paint::MOUSE_SLOT}else{20.0};
+                            let ring=px+if chip.source.has_icon(){w-10.0}else{w/2.0};
+                            paint::battery(&c,ring,15.0,Some(chip.percent),chip.charging,1.0,chip.source,&chip.name);
+                            px+=w;
+                        }
+                    }
+                },
                 CLOCK=>{
                     let text=self.settings.clock_text(&chrono::Local::now().format("%H:%M:%S").to_string());
                     paint::clock(&c,x-paint::clock_width(&c,&text,theme::size::PILL_CLOCK)/2.0,21.0,&text,theme::size::PILL_CLOCK);

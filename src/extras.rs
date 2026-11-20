@@ -1496,7 +1496,24 @@ impl App {
                             ui.separator();
                             setting_row(ui,"时间","关闭后仍可在展开顶栏查看",&mut self.settings.show_clock);
                             ui.separator();
-                            setting_row(ui,"电量","无电池设备自动隐藏",&mut self.settings.show_battery);
+                            setting_row(ui,"电量","勾选要显示在岛上的电量；没读到的设备不会出现",&mut self.settings.show_battery);
+                            if self.settings.show_battery {
+                                if self.power_offers.is_empty() {
+                                    settings_hint(ui,"连上带电量的鼠标、耳机或其他设备后，可以在这里选择。");
+                                } else {
+                                    let offers=self.power_offers.clone();
+                                    for chip in offers {
+                                        let mut on=!self.settings.battery_hidden.iter().any(|id|id==&chip.id);
+                                        let title=format!("{}  {}%",chip.name,chip.percent);
+                                        setting_row(ui,&title,"",&mut on);
+                                        let hidden=self.settings.battery_hidden.iter().any(|id|id==&chip.id);
+                                        if on==hidden {
+                                            if on {self.settings.battery_hidden.retain(|id|id!=&chip.id);}
+                                            else if !hidden {self.settings.battery_hidden.push(chip.id.clone());}
+                                        }
+                                    }
+                                }
+                            }
                             ui.separator();
                             setting_row(ui,"天气","天气图标和温度，点击打开天气页",&mut self.settings.show_weather);
                             ui.separator();
