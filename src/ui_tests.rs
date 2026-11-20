@@ -687,7 +687,7 @@ fn top_bar_settings_switch_modes_and_respect_the_master_switch(){
         h.app.settings.settings_theme=if dark{crate::settings_theme::SettingsTheme::Dark}else{crate::settings_theme::SettingsTheme::Light};
         let mut raster=crate::preview_raster::Raster::new(690,1800);
         for _ in 0..3{let _=draw(&mut h,vec![],&mut raster);}
-        for (on_top,label) in [(true,"岛仔置顶"),(false,"避开顶栏")] {
+        for (on_top,label) in [(true,"置顶"),(false,"避开顶栏")] {
             let output=draw(&mut h,vec![],&mut raster);
             let position=output.shapes.iter().find_map(|s|match &s.shape{egui::Shape::Text(t)if t.galley.text()==label=>{
                 assert!(s.clip_rect.contains_rect(t.visual_bounding_rect()),"显示方式按钮不能裁切");Some(t.visual_bounding_rect().center())
@@ -703,7 +703,7 @@ fn top_bar_settings_switch_modes_and_respect_the_master_switch(){
         }
         h.app.settings.avoid_top_bar=false;
         let output=draw(&mut h,vec![],&mut raster);
-        assert!(!output.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t)if t.galley.text()=="岛仔置顶")),"关闭适配后收起显示方式选项");
+        assert!(!output.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t)if t.galley.text()=="置顶")),"关闭适配后收起显示方式选项");
     }
 }
 
@@ -6249,12 +6249,11 @@ fn about_support_preview() {
             let child=output.lock().unwrap().take().unwrap();
             raster.update_textures(&root.textures_delta);raster.update_textures(&child.textures_delta);
             if frame==3 {
-                let has_wechat=child.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Text(text) if text.galley.text()=="微信支付"));
-                assert_eq!(has_wechat,open);
-                for label in [if open{"返回"}else{"请喝咖啡 · 支持作者"},"完全自愿 · 感谢每一份支持 · 不影响功能使用"] {
-                    let shape=child.shapes.iter().find(|shape|matches!(&shape.shape,egui::Shape::Text(text) if text.galley.text()==label)).expect("按钮和说明必须可见");
+                for label in ["khaos island","QQ 992308975"] {
+                    let shape=child.shapes.iter().find(|shape|matches!(&shape.shape,egui::Shape::Text(text) if text.galley.text()==label)).expect("关于页应显示名称和 QQ");
                     assert!(shape.clip_rect.contains_rect(shape.shape.visual_bounding_rect()),"默认窗口中内容不能被裁切：{label}");
                 }
+                assert!(!child.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Text(text) if text.galley.text().contains("支持作者")||text.galley.text().contains("岛仔"))));
                 raster.buf.fill([0.0,0.0,0.0,1.0]);
                 raster.draw(&h.ctx.tessellate(child.shapes,child.pixels_per_point),child.pixels_per_point);
                 let mut rgba=Vec::new();raster.to_rgba8(&mut rgba);

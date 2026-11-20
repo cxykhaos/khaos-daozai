@@ -60,7 +60,7 @@ pub struct State {
 
 /// 菜单固定中文：启动 / 吉祥物 / 极简 / —— / 设置 / 关于 / 退出。
 fn labels() -> [&'static str; 6] {
-    ["开机启动", "吉祥物", "极简刘海", "关于岛仔", "退出", "设置…"]
+    ["开机启动", "吉祥物", "极简刘海", "关于", "退出", "设置…"]
 }
 
 struct Ctx {
@@ -153,7 +153,7 @@ fn add_icon(hwnd: HWND, hicon: HICON) -> bool {
         hIcon: hicon,
         ..Default::default()
     };
-    fill_tip(&mut nid.szTip, "岛仔");
+    fill_tip(&mut nid.szTip, "khaos island");
     unsafe {
         if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
             // explorer 里已有同名残留时，用 MODIFY 顶掉
@@ -223,10 +223,10 @@ fn menu_items(menu: HMENU) -> Vec<(String, bool, bool)> {
 
 fn about() {
     let text = wide(&format!(
-        "岛仔 {}\n\nWindows 桌面灵动岛小助手\n退出请右键托盘图标，选择「退出」。",
+        "khaos island {}\n\nQQ 992308975\n退出请右键托盘图标，选择「退出」。",
         env!("CARGO_PKG_VERSION")
     ));
-    let title = wide("关于岛仔");
+    let title = wide("关于");
     unsafe {
         MessageBoxW(
             None,
@@ -612,7 +612,7 @@ mod tests {
             assert_eq!(items.len(), 7, "6 项 + 1 分隔线");
             assert!(items[3].2, "第 4 项是分隔线");
             let texts: Vec<_> = items.iter().filter(|i| !i.2).map(|i| i.0.as_str()).collect();
-            assert_eq!(texts, ["开机启动", "吉祥物", "极简刘海", "设置…", "关于岛仔", "退出"]);
+            assert_eq!(texts, ["开机启动", "吉祥物", "极简刘海", "设置…", "关于", "退出"]);
             assert_eq!([items[0].1, items[1].1, items[2].1], want, "勾选态应与状态一致");
             unsafe {
                 let _ = DestroyMenu(menu);
@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn labels_are_fixed_chinese() {
-        assert_eq!(labels(), ["开机启动", "吉祥物", "极简刘海", "关于岛仔", "退出", "设置…"]);
+        assert_eq!(labels(), ["开机启动", "吉祥物", "极简刘海", "关于", "退出", "设置…"]);
     }
 
     #[test]
@@ -657,7 +657,7 @@ fn request_existing_window(hwnd:HWND,calendar:bool)->bool {unsafe{
 
 pub fn activate_existing(calendar:bool)->bool {unsafe{
     let Ok(tray)=FindWindowW(w!("DaozaiTray"),PCWSTR::null()) else{return false;};
-    let Ok(window)=FindWindowW(PCWSTR::null(),w!("岛仔")) else{return false;};
+    let Ok(window)=FindWindowW(PCWSTR::null(),w!("khaos island")) else{return false;};
     let(mut tray_pid,mut window_pid)=(0,0);
     GetWindowThreadProcessId(tray,Some(&mut tray_pid));
     GetWindowThreadProcessId(window,Some(&mut window_pid));

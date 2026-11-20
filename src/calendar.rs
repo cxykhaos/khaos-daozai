@@ -110,7 +110,7 @@ impl Provider {
             ],
             Provider::ICloud => [
                 "用浏览器打开 account.apple.com，登录 Apple 账户",
-                "登录与安全 → App 专用密码 → 生成一个（名称可填「岛仔」）",
+                "登录与安全 → App 专用密码 → 生成一个（名称可填「khaos island」）",
                 "用户名填 Apple ID 邮箱，密码填刚生成的 App 专用密码",
             ],
             Provider::Custom => [

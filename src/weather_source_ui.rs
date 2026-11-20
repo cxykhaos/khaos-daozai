@@ -272,7 +272,7 @@ impl App {
                 let host=ui.add(egui::TextEdit::singleline(&mut self.weather_source.host).id_salt("qweather-host").hint_text("专属域名.qweatherapi.com").desired_width(f32::INFINITY));
                 ui.label(RichText::new("API Key").size(12.0));
                 let stored=self.weather_source.client.as_ref().is_some_and(|c|c.host==self.weather_source.host);
-                let key=ui.add(egui::TextEdit::singleline(&mut self.weather_source.key).id_salt("qweather-key").password(true).hint_text(if stored{"已安全保存；填写新 Key 可更换"}else{"粘贴专门为岛仔创建的 API Key"}).desired_width(f32::INFINITY));
+                let key=ui.add(egui::TextEdit::singleline(&mut self.weather_source.key).id_salt("qweather-key").password(true).hint_text(if stored{"已安全保存；填写新 Key 可更换"}else{"粘贴专门创建的 API Key"}).desired_width(f32::INFINITY));
                 if host.changed()||key.changed(){self.weather_source.invalidate();}
                 ui.add_space(5.0);
                 ui.horizontal_wrapped(|ui|{
@@ -299,7 +299,7 @@ impl App {
                 egui::CollapsingHeader::new("免费额度详情").id_salt("qweather-free-details").show(ui,|ui|{
                     ui.label("每自然月前 50,000 次免费");
                     settings_hint(ui,"同一和风开发者账号合计，GeoAPI 与天气预报共享，并非每个 Key 各享一份。超额继续按量计费，不会自动停止。");
-                    settings_hint(ui,"岛仔限制本机每自然月最多 5,000 次请求，包含搜索、测试、刷新和失败尝试；不能限制同账号其他设备、应用或项目的用量。");
+                    settings_hint(ui,"本机每自然月最多 5,000 次请求，包含搜索、测试、刷新和失败尝试；不能限制同账号其他设备、应用或项目的用量。");
                     ui.hyperlink_to("官方计费说明","https://dev.qweather.com/docs/finance/pricing/");
                 });
             }
@@ -440,7 +440,7 @@ impl App {
     pub(crate) fn weather_tutorial_ui(&mut self,ctx:&egui::Context){
         if !self.weather_source.tutorial_open{self.weather_source.tutorial_textures.clear();return;}
         let id=egui::ViewportId::from_hash_of("daozai-weather-tutorial");
-        ctx.show_viewport_immediate(id,egui::ViewportBuilder::default().with_title("和风天气配置教程 · 岛仔")
+        ctx.show_viewport_immediate(id,egui::ViewportBuilder::default().with_title("和风天气配置教程 · khaos island")
             .with_icon(crate::theme::app_icon()).with_inner_size([820.0,680.0]).with_min_inner_size([520.0,420.0]),|ctx,_|{
             if ctx.input(|i|i.viewport().close_requested()){self.weather_source.tutorial_open=false;}
             let original=ctx.style();let mut style=(*original).clone();
@@ -477,7 +477,7 @@ impl App {
                     ui.spacing_mut().item_spacing.y=0.0;
                     for (index,texture) in self.weather_source.tutorial_textures.iter().enumerate(){
                         if index==self.weather_source.tutorial_step10{
-                            ui.add_space(14.0);ui.label(RichText::new("10  回岛仔配置并启用").size(19.0).strong());ui.add_space(8.0);
+                            ui.add_space(14.0);ui.label(RichText::new("10  回到配置并启用").size(19.0).strong());ui.add_space(8.0);
                             ui.label("填写 API Host 和 API Key，点「测试连接」。通过后搜索并选择城市，点「保存并启用」。");
                             ui.label("当前生效变为「和风天气」后，切换完成。配置可收起；城市选择与应用按钮保持可用。");
                             ui.add_space(10.0);

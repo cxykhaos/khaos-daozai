@@ -1,25 +1,22 @@
 <div align="center">
 
-<img src="assets/daozai-logo.png" width="112" alt="岛仔" />
+<img src="assets/daozai-logo.png" width="112" alt="khaos island" />
 
-# 岛仔 · Daozai
+# khaos island
 
 **一座小岛，装下桌面日常。**
 
 Windows 桌面伙伴，把消息、音乐、日程、天气和 AI 额度放到手边。
 
-[![最新版本](https://img.shields.io/github/v/release/Renly1994/xiaotang-daozai?color=7955b8&label=最新版本)](https://github.com/Renly1994/xiaotang-daozai/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4)](#下载安装)
-[![开源许可](https://img.shields.io/badge/License-MIT-3cbf91)](LICENSE)
-[![Rust 与 egui](https://img.shields.io/badge/Rust-egui-8b6ca8)](#从源码构建与参与开发)
+QQ 992308975
 
-**[下载 Windows 版](https://github.com/Renly1994/xiaotang-daozai/releases/latest)** · [使用指南](docs/USAGE.md) · [更新记录](CHANGELOG.md) · [反馈问题](https://github.com/Renly1994/xiaotang-daozai/issues)
+[使用指南](docs/USAGE.md) · [更新记录](CHANGELOG.md)
 
 </div>
 
-岛仔是一款开源的 Windows 桌面小工具。平时收起在屏幕边缘，鼠标靠近就展开；切歌、看日程、复制验证码、记一条待办，都能顺手完成。小岛里的伙伴会眨眼、打盹、喝水，也会跟着音乐唱歌。
+khaos island 是一款 Windows 桌面小工具。平时收起在屏幕边缘，鼠标靠近就展开；切歌、看日程、复制验证码、记一条待办，都能顺手完成。小岛里的伙伴会眨眼、打盹、喝水，也会跟着音乐唱歌。
 
-你可以选刘海或胶囊，放在顶部、左侧或右侧，只保留自己需要的功能。岛仔使用 Rust 和 egui 构建，不依赖 Electron。
+你可以选刘海或胶囊，放在顶部、左侧或右侧，只保留自己需要的功能。程序使用 Rust 和 egui 构建，不依赖 Electron。
 
 ## 微信里有新消息，看一眼岛边
 
@@ -124,17 +121,9 @@ Windows 桌面伙伴，把消息、音乐、日程、天气和 AI 额度放到�
 
 ## 下载安装
 
-前往 **[最新正式版](https://github.com/Renly1994/xiaotang-daozai/releases/latest)**，按使用习惯选择：
+在本机用 `cargo build --locked --release --bin daozai --target x86_64-pc-windows-msvc` 编译，运行生成的 `daozai.exe`。用户数据保存在应用数据目录。
 
-| 下载文件 | 使用方式 |
-| --- | --- |
-| `Daozai-Setup-v版本号-x64.exe` | **推荐**。双击安装，可选择安装位置、桌面快捷方式和开机自启 |
-| `Daozai-v版本号-windows-x64.zip` | 免安装。完整解压后运行 `daozai.exe`，用户数据仍保存在应用数据目录 |
-| `SHA256SUMS.txt` | 下载校验，可用 PowerShell `Get-FileHash -Algorithm SHA256` 比对 |
-
-首次安装默认创建桌面快捷方式、不开机自启。安装后从小岛或托盘打开设置，选择需要的功能和连接。
-
-**更新**：设置 → 关于 → 检查更新。支持应用内下载、校验后重启更新，也可从发布页下载覆盖安装；升级保留原设置和数据，卸载同样保留用户数据。下载窗口提供夸克网盘备用入口。
+安装后从小岛或托盘打开设置，选择需要的功能和连接。关于页可以查看版本，联系 QQ 992308975。
 
 **系统**：Windows 10／11 x64。默认使用 OpenGL，初始化失败时自动尝试 Direct3D 12。Windows 11 已进行本机实测，Windows 10、不同显卡及多屏组合仍需更多反馈。暂不提供 macOS、Linux 或 ARM64 成品包。
 
@@ -198,8 +187,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1
 
 「悬浮云」皮肤作者：啵（[@hanhb123](https://github.com/hanhb123)）。感谢 egui／eframe、Rust 社区，以及提供参考与素材的开源项目。
 
-## 感谢支持
-
-![感谢支持岛仔的朋友们](docs/images/readme/supporters.webp)
-
-喜欢岛仔的话，欢迎点一个 **Star**，也可以在 **设置 → 关于 → 支持作者** 请岛仔喝杯咖啡。

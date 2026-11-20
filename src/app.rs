@@ -122,6 +122,8 @@ pub struct Env {
     pub date: String,
     pub battery: Option<u8>,
     pub charging: bool,
+    /// 电量环对应的设备。没有整机电池时为鼠标。
+    pub power_source: crate::paint::PowerSource,
     /// 互联网连接状态；未知时不触发表情提醒。
     pub network: Option<bool>,
     /// 光标位置（与 `frame` 传入的 `win` 同一坐标系）；不在窗口附近时为 None。
@@ -892,6 +894,7 @@ pub struct App {
     pub(crate) updates: crate::updates::State,
     pub(crate) resident: bar::Motion,
     pub(crate) resident_power: (Option<u8>,bool),
+    pub(crate) resident_source: crate::paint::PowerSource,
 }
 
 impl App {
@@ -1023,7 +1026,7 @@ impl App {
             weather,
             weather_source,
             updates: crate::updates::State::load(model::config_dir().join("update-check.json")),
-            resident: Default::default(), resident_power:(None,false),
+            resident: Default::default(), resident_power:(None,false), resident_source: crate::paint::PowerSource::System,
         }
     }
 
@@ -1869,9 +1872,11 @@ impl App {
         self.update_media(env,&ctx);
         let bell=self.t<self.notification_bell_until&&!self.compact_notices();
         self.resident_power=(env.battery,env.charging);
+        self.resident_source=env.power_source;
         let mut layout=Layout::new(self.settings.show_battery&&env.battery.is_some(),self.quota_bar_indices().len(),self.media.is_music()&&!bell,self.pomo.running,bell,self.pet_enabled(),self.weather_pill().is_some());
         layout.reorder(&self.settings.resident_order);
         for (position,extra) in self.quota_balance_layout(&ctx){layout.balance_tail(position,extra);}
+        if env.power_source==crate::paint::PowerSource::Mouse { layout.widen(bar::BATTERY,paint::MOUSE_SLOT); }
         if self.settings.clock_period!=0 { layout.widen_clock(40.0); }
         if self.settings.clock_seconds { layout.widen_clock(24.0); }
         if let Some(extra)=self.weather_pill_extra(&ctx){ layout.widen(bar::WEATHER,extra); }
@@ -2907,25 +2912,26 @@ impl App {
         // 顶栏终点布局：[电池][日期][时钟] 作为一组整体居中
         let date_w = base.text_w(&env.date, size::DATE, W::Regular);
         let clock_w = paint::clock_width(base,&clock,size::CLOCK);
-        let battery_space=if show_battery {24.0}else{0.0};
+        let mouse_battery=env.power_source==crate::paint::PowerSource::Mouse;
+        let battery_space=if show_battery {if mouse_battery {24.0+paint::MOUSE_SLOT}else{24.0}}else{0.0};
         let group = battery_space + date_w + 8.0 + clock_w;
         let gx = local_cx - group / 2.0 + if show_battery {6.0}else{0.0};
         // 日程页左侧还有新增按钮，顶栏从操作区右侧开始，避免较长的日期和时段文字挤到按钮上。
         let gx = if self.page==CALENDAR_PAGE {gx.max(155.0)}else{gx};
-        let hb = (gx + 8.5, 18.6);
+        let hb = (gx + if mouse_battery {8.5+paint::MOUSE_SLOT}else{8.5}, 18.6);
         let hd = gx + battery_space;
         let hc = hd + date_w + 8.0;
         // 药丸起点布局
         let has_music=self.media.is_music();
         let layout=self.resident.current();
-        let pb=(local_cx+layout.x[bar::BATTERY].unwrap_or(0.0),15.0);
+        let pb=(local_cx+layout.x[bar::BATTERY].unwrap_or(0.0)+if mouse_battery {paint::MOUSE_SHIFT}else{0.0},15.0);
         let pcx=layout.x[bar::CLOCK].map_or(hc,|x|local_cx+x-paint::clock_width(base,&clock,size::PILL_CLOCK)/2.0);
 
         if self.effective_minimal() && self.t>=self.notification_bell_until && p < 0.02 { return; }
         // 电池：位置/大小连续插值
         let bk = lerp(1.0, 0.8, m);
         let bpos = (lerp(pb.0, hb.0, m), lerp(pb.1, hb.1, m));
-        if show_battery {paint::battery(&base.faded(lerp(layout.clearance(bar::BATTERY),1.0,m)), bpos.0, bpos.1, env.battery, env.charging, bk);}
+        if show_battery {paint::battery(&base.faded(lerp(layout.clearance(bar::BATTERY),1.0,m)), bpos.0, bpos.1, env.battery, env.charging, bk, env.power_source);}
 
         // 时钟：两个字号沿同一路径交叉淡化，避免逐帧换字号
         let cpos = (lerp(pcx, hc, m), lerp(21.0, 23.0, m));
@@ -3096,7 +3102,7 @@ impl App {
             6 => ("AI", "额度", theme::SOFT_GREEN),
             8 if self.weather.solar_open => ("日出", "日落", theme::YELLOW),
             8 => ("当地", "天气", theme::CYAN),
-            _ => ("岛仔", "设置", theme::WHITE),
+            _ => ("khaos", "island", theme::WHITE),
         };
         let wa = c.text(15.0, base, a, size::TITLE, W::Bold, theme::WHITE, H::Left);
         if !b.is_empty() {

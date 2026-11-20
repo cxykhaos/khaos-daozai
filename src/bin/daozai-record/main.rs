@@ -440,6 +440,7 @@ fn main() {
             date: "10月28日 周三".into(),
             battery: Some(76),
             charging: true,
+            power_source: Default::default(),
             network: None,
             cursor: Some(cursor),
             idle_seconds:None,

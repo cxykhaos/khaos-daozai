@@ -411,8 +411,23 @@ pub fn chevron(c: &Card, x: f32, y: f32, dir: f32, hover: f32, press: f32) {
     c.path(&[(cx - dir * s * 0.75, y - s), (cx + dir * s * 0.45, y), (cx - dir * s * 0.75, y + s)], 1.6, Color32::WHITE);
 }
 
+/// 电量环对应的设备。整机电池用环本身表示，鼠标在环左侧放鼠标图标。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PowerSource {
+    #[default]
+    System,
+    Mouse,
+}
+
+/// 鼠标图标边长。环心要相对组件中心右移这么多，图标才落在加宽后的槽里。
+pub const MOUSE_ICON: f32 = 12.0;
+pub const MOUSE_SHIFT: f32 = 8.0;
+/// 给鼠标图标多留出的槽宽。
+pub const MOUSE_SLOT: f32 = 16.0;
+
 /// 电池环：充电绿色 + 闪电；低电量红色；否则灰色并显示百分比弧。
-pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f32) {
+/// `cx` 是环心。鼠标电量时环左侧是鼠标图标，百分比仍留在环里。
+pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f32, source: PowerSource) {
     let r = 8.2 * k;
     let w = 2.6 * k;
     let level = pct.unwrap_or(100) as f32 / 100.0;
@@ -423,6 +438,10 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     } else {
         Color32::from_rgb(220, 220, 224)
     };
+    let icon = if source == PowerSource::Mouse { MOUSE_ICON * k } else { 0.0 };
+    if icon > 0.0 {
+        mouse_icon(c, cx - r - 2.0 * k - icon, cy - icon / 2.0, icon, col);
+    }
     c.ring(cx, cy, r, w, alpha(col, 0.22));
     let a0 = -FRAC_PI_2;
     if level >= 0.999 {
@@ -436,6 +455,28 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
         c.poly(&[(cx - 0.3 * s, cy - 0.9 * s), (cx + 3.2 * s, cy - 0.9 * s), (cx - 1.6 * s, cy + 5.0 * s)], col);
     } else {
         c.text(cx, cy + 2.4 * k, &format!("{}", pct.unwrap_or(0)), 6.6 * k, W::Bold, col, H::Center);
+    }
+    if c.live {
+        let left = cx - r - icon - if icon > 0.0 { 2.0 * k } else { 0.0 };
+        let rect = c.rect(left, cy - r, cx + r - left, r * 2.0);
+        let name = if source == PowerSource::Mouse { "鼠标" } else { "本机" };
+        let tip = match (pct, charging) {
+            (Some(p), true) => format!("{name}电量 {p}% · 充电中"),
+            (Some(p), false) => format!("{name}电量 {p}%"),
+            (None, _) => format!("{name}电量"),
+        };
+        c.ui.interact(rect, Id::new(("power-source", c.live, source as u8)), Sense::hover()).on_hover_text(tip);
+    }
+}
+
+fn mouse_icon(c: &Card, x: f32, y: f32, size: f32, color: Color32) {
+    let rect = c.rect(x, y, size, size);
+    let icon = egui::include_image!("../assets/device-icons/mouse-bold.svg");
+    let egui::ImageSource::Bytes { uri, bytes } = icon else { return };
+    let pixels = (rect.width() * c.ui.ctx().pixels_per_point()).ceil().max(1.0) as u32;
+    let icon = egui::Image::from_bytes(format!("{uri}/{pixels}.svg"), bytes);
+    if let Ok(egui::load::TexturePoll::Ready { texture }) = icon.fit_to_exact_size(rect.size()).load_for_size(c.ui.ctx(), rect.size()) {
+        c.painter.image(texture.id, rect, Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), color);
     }
 }
 

@@ -133,7 +133,7 @@ impl App {
                     if self.settings.clock_seconds {c.text(cx,top+28.0,text.rsplit(':').next().unwrap_or("--"),12.0,W::Bold,theme::GRAY,H::Center);}
                 }
                 SideItem::Weather => self.draw_side_weather(c,cx,mid),
-                SideItem::Battery => paint::battery(c, cx, mid, env.battery, env.charging, 0.72),
+                SideItem::Battery => paint::battery(c, cx+if env.power_source==crate::paint::PowerSource::Mouse {paint::MOUSE_SHIFT*0.72}else{0.0}, mid, env.battery, env.charging, 0.72, env.power_source),
                 SideItem::Music => paint::playback_bars(c, cx, mid, self.t, self.media.playing, theme::WHITE),
                 SideItem::Focus => {
                     let minutes = (self.pomo.remaining / 60.0).ceil().max(0.0) as u32;
